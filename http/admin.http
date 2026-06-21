@@ -1,0 +1,119 @@
+### 관리자 API
+### 환경변수: ADMIN_EMAIL / ADMIN_PASSWORD / ADMIN_SESSION_TOKEN
+### 실시간: GET /admin/events (SSE) — 연결 즉시 현황 push, 이후 15초마다 갱신
+
+@base = http://localhost:3000/api/v1
+
+# ─── 실시간 SSE 스트림 ─────────────────────────────────────────
+# text/event-stream, 관리자 인증 필요
+# data: {"users":N,"owners":N,"partnerShops":N,"views7d":N,"openCodes":N,"ts":"..."}
+GET {{base}}/admin/events
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+Accept: text/event-stream
+
+###
+
+# ─── 로그인 ───────────────────────────────────────────────────
+# → syak_admin 쿠키 발급 (8시간)
+POST {{base}}/admin/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@syak.kr",
+  "password": "syak-admin-dev-2026!"
+}
+
+###
+
+# ─── 대시보드 요약 ─────────────────────────────────────────────
+GET {{base}}/admin/dashboard
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+###
+
+# ─── 사장님 계정 목록 ──────────────────────────────────────────
+GET {{base}}/admin/owners
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+###
+
+# ─── 사장님 샵 연동 해제 ──────────────────────────────────────
+DELETE {{base}}/admin/owners/<ownerId>/shop
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+###
+
+# ─── 파트너 코드 발급 ──────────────────────────────────────────
+POST {{base}}/admin/partner-codes
+Content-Type: application/json
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+{
+  "shopId": "1004494913"
+}
+
+###
+
+# ─── 파트너샵 목록 (연동 완료된 샵만) ──────────────────────────
+GET {{base}}/admin/partner-shops
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+###
+
+# ─── 전체 샵 DB ──────────────────────────────────────────────
+GET {{base}}/admin/shops?page=1
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+###
+
+# ─── 소비자 회원 목록 ──────────────────────────────────────────
+GET {{base}}/admin/users?page=1
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+###
+
+# ─── 통계: 샵별 클릭 수 (7d) ──────────────────────────────────
+GET {{base}}/admin/stats/shop-views
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+###
+
+# ─── 통계: 샵별 클릭 수 (30d) ─────────────────────────────────
+GET {{base}}/admin/stats/shop-views?period=30d
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+###
+
+# ─── 통계: 취소석 신청 건수 ───────────────────────────────────
+GET {{base}}/admin/stats/cancel-requests
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+###
+
+# ─── 통계: 파트너샵 예약 전환율 ────────────────────────────────
+GET {{base}}/admin/stats/partner-conversion
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+###
+
+# ─── 로그아웃 ─────────────────────────────────────────────────
+POST {{base}}/admin/auth/logout
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+###
+
+# ─── 에러 케이스 ──────────────────────────────────────────────
+
+# 잘못된 비밀번호 → 401 ADMIN_UNAUTHORIZED (warn 로깅)
+POST {{base}}/admin/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@syak.kr",
+  "password": "wrong-password"
+}
+
+###
+
+# 인증 없이 접근 → 401 (warn 로깅)
+GET {{base}}/admin/dashboard

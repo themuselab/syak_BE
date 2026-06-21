@@ -1,0 +1,32 @@
+version: '3.9'
+
+services:
+  app-test:
+    build: .
+    ports:
+      - "3001:3000"
+    environment:
+      NODE_ENV: test
+      PORT: 3000
+      DATABASE_URL: postgresql://syak:syak_test_password@db-test:5432/syak_test
+      JWT_SECRET: test-jwt-secret-32-chars-minimum!!
+      JWT_ACCESS_EXPIRES_IN: 1h
+      JWT_REFRESH_EXPIRES_IN: 30d
+      INTERNAL_API_KEY: test-internal-key
+    depends_on:
+      db-test:
+        condition: service_healthy
+
+  db-test:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: syak_test
+      POSTGRES_USER: syak
+      POSTGRES_PASSWORD: syak_test_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U syak -d syak_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql

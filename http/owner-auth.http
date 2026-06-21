@@ -1,0 +1,81 @@
+### 사장님 인증 API
+### 흐름: 카카오 로그인 → 인증코드 입력(첫 회) → 대시보드 접근
+
+@base = http://localhost:3000/api/v1
+
+# ─── 1. 관리자가 파트너 코드 발급 (먼저 실행) ──────────────────────
+POST {{base}}/internal/partner-codes
+Content-Type: application/json
+X-Internal-Key: dev-internal-key
+
+{
+  "shopId": "1004494913"
+}
+
+###
+
+# ─── 2. 사장님 소셜 로그인 (카카오) ────────────────────────────────
+# shopLinked: false → 인증코드 입력 필요
+POST {{base}}/owner/auth/kakao
+Content-Type: application/json
+
+{
+  "access_token": "kakao-access-token-here"
+}
+
+###
+
+# ─── 3. 인증코드로 샵 연결 (로그인 후 실행) ──────────────────────────
+# 2에서 발급된 syak_owner_access 쿠키 필요
+# code: 1에서 발급받은 8자리 코드
+POST {{base}}/owner/auth/code
+Content-Type: application/json
+Cookie: syak_owner_access=<token-from-step-2>
+
+{
+  "code": "AB3K7P2Q"
+}
+
+###
+
+# ─── 4. 내 정보 조회 ──────────────────────────────────────────────
+GET {{base}}/owner/auth/me
+Cookie: syak_owner_access=<token>
+
+###
+
+# ─── 5. 토큰 갱신 ─────────────────────────────────────────────────
+POST {{base}}/owner/auth/token/refresh
+Cookie: syak_owner_refresh=<refresh-token>
+
+###
+
+# ─── 6. 로그아웃 ──────────────────────────────────────────────────
+POST {{base}}/owner/auth/sign-out
+Cookie: syak_owner_access=<token>
+
+###
+
+# ─── 에러 케이스 ──────────────────────────────────────────────────
+
+# access_token 누락 → 400
+POST {{base}}/owner/auth/kakao
+Content-Type: application/json
+
+{}
+
+###
+
+# 인증 없이 접근 → 401 OWNER_UNAUTHORIZED
+GET {{base}}/owner/auth/me
+
+###
+
+# 잘못된 코드 → 400 PARTNER_CODE_INVALID
+POST {{base}}/owner/auth/code
+Content-Type: application/json
+Cookie: syak_owner_access=<token>
+
+{
+  "code": "INVALID1"
+}

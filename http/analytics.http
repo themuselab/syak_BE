@@ -1,0 +1,25 @@
+### 사장님 대시보드 분석 API
+
+@base = http://localhost:3000/api/v1
+@ownerToken = <syak_owner_access-token>
+
+# ─── 7일 통계 (기본) ──────────────────────────────────────────
+GET {{base}}/owner/analytics
+Cookie: syak_owner_access={{ownerToken}}
+
+###
+
+# ─── 30일 통계 ────────────────────────────────────────────────
+GET {{base}}/owner/analytics?period=30d
+Cookie: syak_owner_access={{ownerToken}}
+
+###
+
+# ─── 샵 상세 조회 (소비자 앱) → view 이벤트 기록됨 ─────────────
+GET {{base}}/shops/1004494913
+
+###
+
+# ─── 유효하지 않은 period → 400 ──────────────────────────────
+GET {{base}}/owner/analytics?period=90d
+Cookie: syak_owner_access={{ownerToken}}

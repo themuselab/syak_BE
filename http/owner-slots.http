@@ -1,0 +1,65 @@
+### 사장님 슬롯 관리 API
+### 샵 연결 완료 후 사용 가능
+
+@base = http://localhost:3000/api/v1
+@ownerToken = <syak_owner_access-token>
+
+# ─── 목록 조회 ────────────────────────────────────────────────
+GET {{base}}/owner/slots
+Cookie: syak_owner_access={{ownerToken}}
+
+###
+
+# ─── 슬롯 등록 ────────────────────────────────────────────────
+POST {{base}}/owner/slots
+Content-Type: application/json
+Cookie: syak_owner_access={{ownerToken}}
+
+{
+  "date": "2026-06-25",
+  "startTime": "14:00"
+}
+
+###
+
+# ─── 슬롯 수정 ────────────────────────────────────────────────
+PATCH {{base}}/owner/slots/1
+Content-Type: application/json
+Cookie: syak_owner_access={{ownerToken}}
+
+{
+  "date": "2026-06-26",
+  "startTime": "15:00"
+}
+
+###
+
+# ─── 슬롯 삭제 ────────────────────────────────────────────────
+DELETE {{base}}/owner/slots/1
+Cookie: syak_owner_access={{ownerToken}}
+
+###
+
+# ─── 에러 케이스 ──────────────────────────────────────────────
+
+# 날짜 형식 오류 → 400
+POST {{base}}/owner/slots
+Content-Type: application/json
+Cookie: syak_owner_access={{ownerToken}}
+
+{
+  "date": "25-06-2026",
+  "startTime": "14:00"
+}
+
+###
+
+# 샵 미연결 상태 → 400 (VALIDATION_ERROR: shopId)
+GET {{base}}/owner/slots
+Cookie: syak_owner_access=<token-without-shop>
+
+###
+
+# 없는 슬롯 삭제 → 404
+DELETE {{base}}/owner/slots/9999999
+Cookie: syak_owner_access={{ownerToken}}

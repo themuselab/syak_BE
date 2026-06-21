@@ -1,0 +1,31 @@
+name: app-discord-report
+
+on:
+  schedule:
+    - cron: "5 23 * * *" # 매일 08:05 KST (웹 리포트 5분 뒤)
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: "집계 시간 (기본 24)"
+        required: false
+        default: "24"
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install psycopg2-binary
+      - name: Send app report → Discord
+        env:
+          APP_DATABASE_URL: ${{ secrets.APP_DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          DISCORD_WEBHOOK_APP: ${{ secrets.DISCORD_WEBHOOK_APP }}
+          REPORT_HOURS: ${{ github.event.inputs.hours || '24' }}
+        run: python scraper/discord_report_app.py

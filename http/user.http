@@ -1,0 +1,38 @@
+@base = http://localhost:3000/api/v1
+
+# auth.http에서 로그인 후 syak_access 쿠키 값을 여기에 붙여넣기
+@cookie = PASTE_syak_access_VALUE_HERE
+
+# ── 유저 프로필 ──────────────────────────────────────────────────────
+
+###
+
+### 내 프로필 조회
+# linkedProviders: 연결된 소셜 계정 배열
+# 예: ["kakao"] → 카카오만 / ["kakao","naver"] → 두 계정 연결
+GET {{base}}/users/me
+Cookie: syak_access={{cookie}}
+
+# ── 회원 탈퇴 ────────────────────────────────────────────────────────
+
+###
+
+### 회원 탈퇴 (비가역적 — 신중히!)
+# 204 → 삭제 성공 (유저, 즐겨찾기, 알림설정, 리프레시 토큰 전부 삭제)
+# 쿠키도 함께 만료됨
+# ⚠️  이 요청 실행 전 테스트 계정인지 반드시 확인
+DELETE {{base}}/users/me
+Cookie: syak_access={{cookie}}
+
+# ── 에러 케이스 ──────────────────────────────────────────────────────
+
+###
+
+### 인증 없이 프로필 조회 → 401 AUTH_UNAUTHORIZED
+GET {{base}}/users/me
+
+###
+
+### 만료된 토큰으로 조회 → 401 AUTH_TOKEN_EXPIRED
+GET {{base}}/users/me
+Cookie: syak_access=eyJhbGciOiJIUzI1NiJ9.expired.token

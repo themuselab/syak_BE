@@ -1,0 +1,88 @@
+@base = http://localhost:3000/api/v1
+
+# ── 샵 목록 ──────────────────────────────────────────────────────────
+
+### 전체 샵 목록 (기본: 빈자리 있는 샵 우선)
+GET {{base}}/shops
+
+###
+
+### 샵 목록 — 오늘 빈자리 있는 샵만
+GET {{base}}/shops?has_slot=true
+
+###
+
+### 샵 목록 — 가격 낮은순
+GET {{base}}/shops?sort=price_asc
+
+###
+
+### 샵 목록 — 이벤트 있는 샵
+GET {{base}}/shops?has_event=true
+
+###
+
+### 샵 목록 — 2만원대 가격대 필터
+GET {{base}}/shops?price_tiers=2만원대
+
+###
+
+### 샵 목록 — 복수 가격대 (1만원대, 2만원대)
+GET {{base}}/shops?price_tiers=1만원대,2만원대
+
+###
+
+### 샵 목록 — 헤어 카테고리 + 빈자리
+GET {{base}}/shops?categories=헤어&has_slot=true
+
+###
+
+### 샵 목록 — 구로구 필터
+GET {{base}}/shops?districts=구로구
+
+###
+
+### 샵 목록 — 성동구, 서초구 복수 구
+GET {{base}}/shops?districts=성동구,서초구
+
+###
+
+### 샵 목록 — 파트너샵 우선
+GET {{base}}/shops?sort=partner
+
+###
+
+### 샵 목록 — 페이지네이션 (2페이지, 5개씩)
+GET {{base}}/shops?page=2&limit=5
+
+###
+
+### 샵 목록 — 복합 필터 (빈자리 + 1만원대 + 가격순)
+GET {{base}}/shops?has_slot=true&price_tiers=1만원대&sort=price_asc
+
+# ── 샵 상세 ──────────────────────────────────────────────────────────
+
+###
+
+### 샵 상세 — 준오헤어 아이파크몰고척점 (슬롯 많음, 이벤트 없음)
+GET {{base}}/shops/1004494913
+
+###
+
+### 샵 상세 — 헤어더뷰 퍼스트왕십리역점 (리뷰 26,382개, 전화번호 있음)
+GET {{base}}/shops/1759684198
+
+###
+
+### 샵 상세 — 차홍룸 양재점 (고가, 5.5만원대)
+GET {{base}}/shops/1025990104
+
+###
+
+### 샵 상세 — 박승철헤어스투디오 (이벤트 있음: 첫방문 할인)
+GET {{base}}/shops/12980529
+
+###
+
+### 샵 상세 — 존재하지 않는 ID → 404 SHOP_NOT_FOUND
+GET {{base}}/shops/nonexistent_id_999

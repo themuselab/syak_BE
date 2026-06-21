@@ -4,12 +4,14 @@ import { GetShopDetailUseCase } from '../application/GetShopDetailUseCase';
 import { Category, PriceTier } from '../domain/Shop';
 import { SortOrder } from '../domain/ShopFilter';
 import { RecordShopViewUseCase } from '../../analytics/application/RecordShopViewUseCase';
+import { RecordReservationClickUseCase } from '../../analytics/application/RecordReservationClickUseCase';
 
 export class CatalogController {
   constructor(
     private readonly getShops: GetShopsUseCase,
     private readonly getShopDetail: GetShopDetailUseCase,
     private readonly recordView?: RecordShopViewUseCase,
+    private readonly recordClick?: RecordReservationClickUseCase,
   ) {}
 
   list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -48,5 +50,12 @@ export class CatalogController {
     } catch (err) {
       next(err);
     }
+  };
+
+  reservationClick = (req: Request, res: Response): void => {
+    if (this.recordClick) {
+      void this.recordClick.execute({ shopId: req.params.shopId, userId: req.user?.sub ?? null });
+    }
+    res.status(204).send();
   };
 }

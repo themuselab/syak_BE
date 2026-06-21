@@ -5,6 +5,7 @@ export interface User {
   nickname: string | null;
   profileImage: string | null;
   createdAt: Date;
+  status: 'active' | 'banned';
 }
 
 export interface SocialProfile {

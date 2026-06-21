@@ -31,6 +31,9 @@ export const ErrorCode = {
   // Admin (관리자)
   ADMIN_UNAUTHORIZED:    'ADMIN_UNAUTHORIZED',
 
+  // User status
+  USER_BANNED:           'USER_BANNED',
+
   // General
   VALIDATION_ERROR:      'VALIDATION_ERROR',
   NOT_FOUND:             'NOT_FOUND',
@@ -60,6 +63,7 @@ export const KoreanMessages: Record<ErrorCodeType, string> = {
   SHOP_ALREADY_LINKED:   '이미 연결된 샵이 있습니다',
   SLOT_FORBIDDEN:        '해당 슬롯에 대한 권한이 없습니다',
   ADMIN_UNAUTHORIZED:    '관리자 로그인이 필요합니다',
+  USER_BANNED:           '이용이 제한된 계정입니다',
   VALIDATION_ERROR:      '요청 데이터가 올바르지 않습니다',
   NOT_FOUND:             '요청한 리소스를 찾을 수 없습니다',
   INTERNAL_ERROR:        '서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요',

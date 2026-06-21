@@ -3,6 +3,7 @@ import { SlotListener } from '../shared/lib/slotListener';
 
 // Admin
 import { AdminController } from '../contexts/admin/interface/AdminController';
+import { InquiryController } from '../contexts/admin/interface/InquiryController';
 
 // Owner
 import { PgOwnerRepository } from '../contexts/owner/infrastructure/PgOwnerRepository';
@@ -19,6 +20,7 @@ import { OwnerInternalController } from '../contexts/owner/interface/OwnerIntern
 // Analytics
 import { PgAnalyticsRepository } from '../contexts/analytics/infrastructure/PgAnalyticsRepository';
 import { RecordShopViewUseCase } from '../contexts/analytics/application/RecordShopViewUseCase';
+import { RecordReservationClickUseCase } from '../contexts/analytics/application/RecordReservationClickUseCase';
 import { GetShopAnalyticsUseCase } from '../contexts/analytics/application/GetShopAnalyticsUseCase';
 import { AnalyticsController } from '../contexts/analytics/interface/AnalyticsController';
 
@@ -91,6 +93,7 @@ export interface Controllers {
   ownerSlots: OwnerSlotsController;
   analytics: AnalyticsController;
   admin: AdminController;
+  inquiry: InquiryController;
 }
 
 export interface AppDependencies {
@@ -126,9 +129,10 @@ export function buildDependencies(): AppDependencies {
     new LinkSocialAccountUseCase(userRepo, socialProviders),
   );
 
-  // ── Analytics (RDS — 뷰 이벤트 기록) ─────────────────────────
+  // ── Analytics (RDS — 뷰/클릭 이벤트 기록) ────────────────────
   const analyticsRepo = new PgAnalyticsRepository(rds);
   const recordView = new RecordShopViewUseCase(analyticsRepo);
+  const recordClick = new RecordReservationClickUseCase(analyticsRepo);
   const analyticsController = new AnalyticsController(new GetShopAnalyticsUseCase(analyticsRepo));
 
   // ── Catalog (Supabase — 읽기 전용, Redis 캐시) ──────────────
@@ -137,6 +141,7 @@ export function buildDependencies(): AppDependencies {
     new GetShopsUseCase(shopRepo),
     new GetShopDetailUseCase(shopRepo),
     recordView,
+    recordClick,
   );
 
   // ── Reservation (Supabase — 읽기 전용) ─────────────────────
@@ -197,6 +202,7 @@ export function buildDependencies(): AppDependencies {
 
   // ── Admin (env 기반 단일 계정) ───────────────────────────────
   const adminController = new AdminController(rds, supabase);
+  const inquiryController = new InquiryController(rds);
 
   // ── Real-time (Supabase LISTEN/NOTIFY) ───────────────────
   const slotListener = new SlotListener(dispatchUseCase);
@@ -213,6 +219,7 @@ export function buildDependencies(): AppDependencies {
     ownerSlots: ownerSlotsController,
     analytics: analyticsController,
     admin: adminController,
+    inquiry: inquiryController,
   };
   return { controllers, slotListener };
 }

@@ -8,7 +8,7 @@ export class PgUserRepository implements IUserRepository {
 
   async findBySocial(provider: SocialProvider, socialId: string): Promise<User | null> {
     const { rows } = await this.pool.query(
-      `SELECT u.id, u.nickname, u.profile_image, u.created_at
+      `SELECT u.id, u.nickname, u.profile_image, u.created_at, u.status
        FROM users u
        JOIN user_social_accounts sa ON sa.user_id = u.id
        WHERE sa.social_provider = $1 AND sa.social_id = $2`,
@@ -67,6 +67,10 @@ export class PgUserRepository implements IUserRepository {
     );
   }
 
+  async updateStatus(userId: string, status: 'active' | 'banned'): Promise<void> {
+    await this.pool.query('UPDATE users SET status = $2 WHERE id = $1', [userId, status]);
+  }
+
   async deleteById(userId: string): Promise<void> {
     await this.pool.query('DELETE FROM users WHERE id = $1', [userId]);
   }
@@ -101,6 +105,7 @@ export class PgUserRepository implements IUserRepository {
       nickname: row.nickname as string | null,
       profileImage: row.profile_image as string | null,
       createdAt: row.created_at as Date,
+      status: (row.status as 'active' | 'banned') ?? 'active',
     };
   }
 }

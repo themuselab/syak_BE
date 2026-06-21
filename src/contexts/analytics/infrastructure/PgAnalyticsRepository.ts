@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { IAnalyticsRepository } from '../ports/IAnalyticsRepository';
-import { ShopViewEvent, ShopAnalytics } from '../domain/Analytics';
+import { ShopViewEvent, ReservationClickEvent, ShopAnalytics } from '../domain/Analytics';
 
 export class PgAnalyticsRepository implements IAnalyticsRepository {
   constructor(private readonly pool: Pool) {}
@@ -8,6 +8,13 @@ export class PgAnalyticsRepository implements IAnalyticsRepository {
   async recordView(event: ShopViewEvent): Promise<void> {
     await this.pool.query(
       'INSERT INTO shop_view_events (shop_id, user_id) VALUES ($1, $2)',
+      [event.shopId, event.userId],
+    );
+  }
+
+  async recordClick(event: ReservationClickEvent): Promise<void> {
+    await this.pool.query(
+      'INSERT INTO reservation_click_events (shop_id, user_id) VALUES ($1, $2)',
       [event.shopId, event.userId],
     );
   }

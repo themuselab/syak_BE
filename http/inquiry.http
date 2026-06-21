@@ -1,0 +1,27 @@
+### 샵 도입 신청 API (SO-000a)
+### 인증 불필요 — 랜딩페이지 폼에서 직접 호출
+
+@base = http://localhost:3000/api/v1
+
+# ─── 도입 신청 폼 제출 ──────────────────────────────────────────
+# 관리자가 검토 후 파트너 코드 발급 (AD-008 → AD-010)
+POST {{base}}/inquiries
+Content-Type: application/json
+
+{
+  "shopName": "젤리네일",
+  "contact": "010-1234-5678",
+  "gu": "강남구",
+  "category": "네일",
+  "note": "인스타 팔로워 1만명, 예약 대기 고객 다수"
+}
+
+###
+
+# ─── 에러: 필수 필드 누락 → 400 VALIDATION_ERROR ────────────────
+POST {{base}}/inquiries
+Content-Type: application/json
+
+{
+  "shopName": "젤리네일"
+}

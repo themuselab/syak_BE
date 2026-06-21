@@ -3,6 +3,11 @@ export interface ShopViewEvent {
   userId: string | null;
 }
 
+export interface ReservationClickEvent {
+  shopId: string;
+  userId: string | null;
+}
+
 export interface DailyViewCount {
   date: string;
   views: number;

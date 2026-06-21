@@ -86,3 +86,18 @@ GET {{base}}/shops/12980529
 
 ### 샵 상세 — 존재하지 않는 ID → 404 SHOP_NOT_FOUND
 GET {{base}}/shops/nonexistent_id_999
+
+# ── 예약 클릭 추적 (CA-014) ──────────────────────────────────────
+
+###
+
+### 예약 버튼 클릭 추적 — 비회원 (선택적 인증)
+# 네이버 예약 페이지로 이동 직전 앱에서 호출
+# → reservation_click_events에 기록, 응답 204
+POST {{base}}/shops/1004494913/reservation-click
+
+###
+
+### 예약 버튼 클릭 추적 — 로그인 사용자
+POST {{base}}/shops/1004494913/reservation-click
+Cookie: syak_access=<token>

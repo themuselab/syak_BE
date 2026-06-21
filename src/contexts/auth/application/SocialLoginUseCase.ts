@@ -32,6 +32,8 @@ export class SocialLoginUseCase {
     const existing = await this.userRepo.findBySocial(provider, profile.socialId);
     const isNewUser = !existing;
 
+    if (existing?.status === 'banned') throw Errors.userBanned();
+
     let user;
     if (existing) {
       // 기존 유저 — 소셜 프로필 최신 정보로 업데이트

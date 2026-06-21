@@ -12,32 +12,38 @@ export function adminRouter(admin: AdminController): Router {
   // ── 이하 관리자 인증 필요 ─────────────────────────────────────
   router.use(requireAdminAuth);
 
-  // SSE 실시간 스트림 (대시보드 전체 상태 15초마다 push)
-  router.get('/events',                 admin.stream);
+  router.get('/events',                      admin.stream);            // SSE 실시간 (AD-002~AD-012 대시보드)
+  router.get('/dashboard',                   admin.dashboardSummary);  // AD-001 (SSE fallback 초기 로드)
 
-  // 대시보드 요약 (초기 로드 또는 SSE 미지원 fallback)
-  router.get('/dashboard',              admin.dashboardSummary);
-
-  // 사장님 계정
-  router.get('/owners',                 admin.listOwners);
-  router.delete('/owners/:ownerId/shop', admin.unlinkOwner);
+  // 사장님 계정 관리
+  router.get('/owners',                      admin.listOwners);            // AD-012
+  router.delete('/owners/:ownerId/shop',     admin.unlinkOwner);           // AD-011
 
   // 파트너 코드 발급
-  router.post('/partner-codes',         admin.createPartnerCode);
+  router.post('/partner-codes',              admin.createPartnerCode);     // AD-010
 
-  // 파트너샵 (연동 완료된 샵만)
-  router.get('/partner-shops',          admin.listPartnerShops);
+  // 파트너샵 연동 현황
+  router.get('/partner-shops',              admin.listPartnerShops);       // AD-011
 
-  // 전체 샵 DB
-  router.get('/shops',                  admin.listAllShops);
+  // 전체 샵 DB 조회 + 등록/수정/삭제
+  router.get('/shops',                      admin.listAllShops);           // AD-009
+  router.post('/shops',                     admin.createShop);             // AD-008
+  router.patch('/shops/:shopId',            admin.updateShop);             // AD-009
+  router.delete('/shops/:shopId',           admin.deleteShop);             // AD-009
 
-  // 소비자 회원 목록
-  router.get('/users',                  admin.listUsers);
+  // 소비자 회원 목록 + 정지/차단
+  router.get('/users',                      admin.listUsers);              // AD-006
+  router.patch('/users/:userId/status',     admin.updateUserStatus);       // AD-007
+
+  // 도입 문의 (SO-000a 폼 → 관리자 검토 → AD-008 샵 등록)
+  router.get('/inquiries',                  admin.listInquiries);          // AD-008
+  router.patch('/inquiries/:inquiryId',     admin.updateInquiry);          // AD-008
 
   // 통계
-  router.get('/stats/shop-views',       admin.shopViewStats);
-  router.get('/stats/cancel-requests',  admin.cancelRequestStats);
-  router.get('/stats/partner-conversion', admin.partnerConversionStats);
+  router.get('/stats/shop-views',           admin.shopViewStats);          // AD-002
+  router.get('/stats/reservation-clicks',   admin.reservationClickStats);  // AD-003
+  router.get('/stats/cancel-requests',      admin.cancelRequestStats);     // AD-004
+  router.get('/stats/partner-conversion',   admin.partnerConversionStats); // AD-005
 
   return router;
 }

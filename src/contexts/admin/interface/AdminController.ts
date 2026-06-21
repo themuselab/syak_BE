@@ -207,6 +207,129 @@ export class AdminController {
     } catch (err) { next(err); }
   };
 
+  // ── 사용자 상태 변경 (정지/차단) AD-007 ──────────────────────
+  updateUserStatus = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { status } = req.body as { status?: string };
+      if (status !== 'active' && status !== 'banned') {
+        return next(Errors.validation({ status: 'active 또는 banned 값이 필요합니다' }));
+      }
+      await this.rds.query('UPDATE users SET status = $2 WHERE id = $1', [req.params.userId, status]);
+      res.json({ ok: true });
+    } catch (err) { next(err); }
+  };
+
+  // ── 통계: 예약 버튼 클릭 수 AD-003 ──────────────────────────
+  reservationClickStats = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const period = req.query.period === '30d' ? 30 : 7;
+      const { rows } = await this.rds.query(`
+        SELECT e.shop_id, s.name AS shop_name, s.gu,
+               COUNT(*) AS clicks
+        FROM reservation_click_events e
+        LEFT JOIN shops s ON s.id = e.shop_id
+        WHERE e.clicked_at >= NOW() - INTERVAL '${period} days'
+        GROUP BY e.shop_id, s.name, s.gu
+        ORDER BY clicks DESC
+        LIMIT 100
+      `);
+      res.json({ period: `${period}d`, stats: mapRows(rows) });
+    } catch (err) { next(err); }
+  };
+
+  // ── 샵 도입 문의 목록 (SO-000a → AD-008) ─────────────────────
+  listInquiries = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const status = (req.query.status as string) ?? 'pending';
+      const { rows } = await this.rds.query(
+        `SELECT id, shop_name, contact, gu, category, note, status, created_at, reviewed_at
+         FROM shop_inquiries
+         WHERE status = $1
+         ORDER BY created_at DESC
+         LIMIT 100`,
+        [status],
+      );
+      res.json({ inquiries: mapRows(rows) });
+    } catch (err) { next(err); }
+  };
+
+  // ── 샵 도입 문의 상태 변경 (approved | rejected) ─────────────
+  updateInquiry = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { status } = req.body as { status?: string };
+      if (status !== 'approved' && status !== 'rejected') {
+        return next(Errors.validation({ status: 'approved 또는 rejected 값이 필요합니다' }));
+      }
+      const { rowCount } = await this.rds.query(
+        `UPDATE shop_inquiries SET status = $2, reviewed_at = NOW() WHERE id = $1`,
+        [req.params.inquiryId, status],
+      );
+      if (!rowCount) return next(Errors.notFound({ inquiryId: req.params.inquiryId }));
+      res.json({ ok: true });
+    } catch (err) { next(err); }
+  };
+
+  // ── 파트너샵 직접 등록 (AD-008) — Supabase에 기록 ────────────
+  createShop = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { name, gu, category, minPrice, lat, lng, bizId } =
+        req.body as {
+          name?: string; gu?: string; category?: string;
+          minPrice?: number; lat?: number; lng?: number; bizId?: string;
+        };
+      if (!name || !gu || !category) {
+        return next(Errors.validation({ name: 'name, gu, category는 필수입니다' }));
+      }
+      const { rows } = await this.supabase.query(
+        `INSERT INTO shops (name, gu, category, categories, min_price, lat, lng, biz_id, is_partner, today_open)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, false)
+         RETURNING id, name, gu, category, is_partner`,
+        [name, gu, category, JSON.stringify([category]), minPrice ?? null, lat ?? null, lng ?? null, bizId ?? null],
+      );
+      res.status(201).json(mapRows(rows)[0]);
+    } catch (err) { next(err); }
+  };
+
+  // ── 파트너샵 정보 수정 (AD-009) ──────────────────────────────
+  updateShop = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const fields: string[] = [];
+      const params: unknown[] = [req.params.shopId];
+      const add = (col: string, val: unknown) => {
+        params.push(val);
+        fields.push(`${col} = $${params.length}`);
+      };
+      const body = req.body as Record<string, unknown>;
+      if (body.name       !== undefined) add('name', body.name);
+      if (body.gu         !== undefined) add('gu', body.gu);
+      if (body.category   !== undefined) add('category', body.category);
+      if (body.minPrice   !== undefined) add('min_price', body.minPrice);
+      if (body.lat        !== undefined) add('lat', body.lat);
+      if (body.lng        !== undefined) add('lng', body.lng);
+      if (body.bizId      !== undefined) add('biz_id', body.bizId);
+      if (body.isPartner  !== undefined) add('is_partner', body.isPartner);
+      if (!fields.length) return next(Errors.validation({ fields: '변경할 필드가 없습니다' }));
+      const { rowCount } = await this.supabase.query(
+        `UPDATE shops SET ${fields.join(', ')} WHERE id = $1`,
+        params,
+      );
+      if (!rowCount) return next(Errors.notFound({ shopId: req.params.shopId }));
+      res.json({ ok: true });
+    } catch (err) { next(err); }
+  };
+
+  // ── 파트너샵 삭제 (AD-009) ───────────────────────────────────
+  deleteShop = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { rowCount } = await this.supabase.query(
+        'DELETE FROM shops WHERE id = $1',
+        [req.params.shopId],
+      );
+      if (!rowCount) return next(Errors.notFound({ shopId: req.params.shopId }));
+      res.status(204).send();
+    } catch (err) { next(err); }
+  };
+
   // ── 대시보드 요약 (SSE fallback) ─────────────────────────────
   dashboardSummary = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {

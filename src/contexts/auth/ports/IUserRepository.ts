@@ -17,6 +17,7 @@ export interface IUserRepository {
   /** 프로필 업데이트 (소셜 로그인 시 최신 정보 반영) */
   updateProfile(userId: string, nickname: string | null, profileImage: string | null): Promise<void>;
 
+  updateStatus(userId: string, status: 'active' | 'banned'): Promise<void>;
   deleteById(userId: string): Promise<void>;
 
   saveRefreshToken(userId: string, token: string, expiresAt: Date): Promise<void>;

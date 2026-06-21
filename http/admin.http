@@ -72,6 +72,86 @@ Cookie: syak_admin=dev-admin-session-token-syak-2026
 
 ###
 
+# ─── 사용자 정지 (AD-007) ────────────────────────────────────
+PATCH {{base}}/admin/users/<userId>/status
+Content-Type: application/json
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+{
+  "status": "banned"
+}
+
+###
+
+# ─── 사용자 정지 해제 ────────────────────────────────────────
+PATCH {{base}}/admin/users/<userId>/status
+Content-Type: application/json
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+{
+  "status": "active"
+}
+
+###
+
+# ─── 샵 직접 등록 (AD-008) ───────────────────────────────────
+POST {{base}}/admin/shops
+Content-Type: application/json
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+{
+  "name": "젤리네일 강남점",
+  "gu": "강남구",
+  "category": "네일",
+  "minPrice": 30000,
+  "lat": 37.5172,
+  "lng": 127.0473,
+  "bizId": "1004494913"
+}
+
+###
+
+# ─── 샵 정보 수정 (AD-009) ───────────────────────────────────
+PATCH {{base}}/admin/shops/<shopId>
+Content-Type: application/json
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+{
+  "minPrice": 35000,
+  "isPartner": true
+}
+
+###
+
+# ─── 샵 삭제 (AD-009) ────────────────────────────────────────
+DELETE {{base}}/admin/shops/<shopId>
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+###
+
+# ─── 도입 문의 목록 (pending) ────────────────────────────────
+GET {{base}}/admin/inquiries
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+###
+
+# ─── 도입 문의 목록 (approved) ───────────────────────────────
+GET {{base}}/admin/inquiries?status=approved
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+###
+
+# ─── 도입 문의 승인 → 파트너샵 등록으로 이어짐 ────────────────
+PATCH {{base}}/admin/inquiries/<inquiryId>
+Content-Type: application/json
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+{
+  "status": "approved"
+}
+
+###
+
 # ─── 통계: 샵별 클릭 수 (7d) ──────────────────────────────────
 GET {{base}}/admin/stats/shop-views
 Cookie: syak_admin=dev-admin-session-token-syak-2026
@@ -80,6 +160,12 @@ Cookie: syak_admin=dev-admin-session-token-syak-2026
 
 # ─── 통계: 샵별 클릭 수 (30d) ─────────────────────────────────
 GET {{base}}/admin/stats/shop-views?period=30d
+Cookie: syak_admin=dev-admin-session-token-syak-2026
+
+###
+
+# ─── 통계: 예약 버튼 클릭 수 (AD-003) ───────────────────────
+GET {{base}}/admin/stats/reservation-clicks
 Cookie: syak_admin=dev-admin-session-token-syak-2026
 
 ###

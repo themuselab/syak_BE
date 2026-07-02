@@ -35,6 +35,7 @@ export function createApp(): Express {
   const app = express();
   applyMiddleware(app);
   const controllers = buildControllers();
+  app.get('/health', (_req, res) => res.status(200).send('ok'));
   app.use('/api/v1', buildRouter(controllers));
   app.use(errorMiddleware);
   return app;
@@ -46,6 +47,7 @@ if (require.main === module) {
 
   const app = express();
   applyMiddleware(app);
+  app.get('/health', (_req, res) => res.status(200).send('ok'));
   app.use('/api/v1', buildRouter(controllers));
   app.use(errorMiddleware);
 

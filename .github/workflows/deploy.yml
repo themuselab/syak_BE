@@ -35,31 +35,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Deploy to EC2 via SSH
+      - name: Blue-Green Deploy to EC2
         uses: appleboy/ssh-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+          IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          envs: GH_TOKEN,GH_ACTOR,IMAGE
           script: |
-            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            docker pull ghcr.io/${{ github.repository }}:latest
-            docker stop syak-backend || true
-            docker rm syak-backend || true
-            docker run -d \
-              --name syak-backend \
-              --restart unless-stopped \
-              -p 3000:3000 \
-              -e NODE_ENV=production \
-              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-              -e JWT_SECRET="${{ secrets.JWT_SECRET }}" \
-              -e INTERNAL_API_KEY="${{ secrets.INTERNAL_API_KEY }}" \
-              -e KAKAO_REST_API_KEY="${{ secrets.KAKAO_REST_API_KEY }}" \
-              -e NAVER_CLIENT_ID="${{ secrets.NAVER_CLIENT_ID }}" \
-              -e NAVER_CLIENT_SECRET="${{ secrets.NAVER_CLIENT_SECRET }}" \
-              -e APPLE_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}" \
-              -e APPLE_KEY_ID="${{ secrets.APPLE_KEY_ID }}" \
-              -e APPLE_PRIVATE_KEY="${{ secrets.APPLE_PRIVATE_KEY }}" \
-              -e FCM_SERVER_KEY="${{ secrets.FCM_SERVER_KEY }}" \
-              ghcr.io/${{ github.repository }}:latest
-            docker image prune -f
+            echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+            chmod +x ~/deploy.sh
+            ~/deploy.sh "$IMAGE"

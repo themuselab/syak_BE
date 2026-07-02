@@ -17,6 +17,7 @@ export class CatalogController {
   list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const result = await this.getShops.execute({
+        q: req.query.q as string | undefined,
         region: req.query.region as string | undefined,
         sort: req.query.sort as SortOrder | undefined,
         categories: req.query.categories
@@ -30,6 +31,8 @@ export class CatalogController {
           : undefined,
         hasEvent: req.query.has_event === 'true',
         hasSlot: req.query.has_slot === 'true',
+        slotDate: req.query.slot_date as string | undefined,
+        slotTime: req.query.slot_time as string | undefined,
         page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
         limit: Math.min(req.query.limit ? parseInt(req.query.limit as string, 10) : 20, 100),
       });

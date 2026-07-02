@@ -20,7 +20,9 @@ export function adminRouter(admin: AdminController): Router {
   router.delete('/owners/:ownerId/shop',     admin.unlinkOwner);           // AD-011
 
   // 파트너 코드 발급
-  router.post('/partner-codes',              admin.createPartnerCode);     // AD-010
+  router.post('/partner-codes',              admin.createPartnerCode);           // AD-010 (기존 shopId 기반)
+  router.post('/partner-codes/from-naver',   admin.createPartnerCodeFromNaver);  // 네이버 플레이스 기반
+  router.get('/naver-place/:placeId',        admin.naverPlaceSearch);            // 네이버 플레이스 조회
 
   // 파트너샵 연동 현황
   router.get('/partner-shops',              admin.listPartnerShops);       // AD-011
@@ -44,6 +46,8 @@ export function adminRouter(admin: AdminController): Router {
   router.get('/stats/reservation-clicks',   admin.reservationClickStats);  // AD-003
   router.get('/stats/cancel-requests',      admin.cancelRequestStats);     // AD-004
   router.get('/stats/partner-conversion',   admin.partnerConversionStats); // AD-005
+  router.get('/stats/visitors',             admin.visitorTrend);            // web 방문자 추이
+  router.get('/trends',                     admin.getTrends);               // 트렌드 (30일)
 
   return router;
 }

@@ -73,18 +73,20 @@ def main():
     new_users  = rds_val("SELECT COUNT(*) FROM users WHERE created_at >= %s", (since,))
     total_users = rds_val("SELECT COUNT(*) FROM users")
 
-    # ── 앱 조회 (shop_view_events) ───────────────────────────────────
-    total_views  = rds_val("SELECT COUNT(*) FROM shop_view_events WHERE viewed_at >= %s", (since,))
-    uniq_viewers = rds_val(
-        "SELECT COUNT(DISTINCT COALESCE(user_id::text, '')) FROM shop_view_events WHERE viewed_at >= %s", (since,))
-
-    # 샵별 조회 TOP 10
-    top_shops = rds_q("""
-        SELECT e.shop_id, COUNT(*) AS views
-        FROM shop_view_events e
-        WHERE e.viewed_at >= %s
-        GROUP BY e.shop_id ORDER BY views DESC LIMIT 10
-    """, (since,))
+    # ── 앱 조회 (shop_view_events — RDS에 없으면 0 처리) ─────────────
+    try:
+        total_views  = rds_val("SELECT COUNT(*) FROM shop_view_events WHERE viewed_at >= %s", (since,))
+        uniq_viewers = rds_val(
+            "SELECT COUNT(DISTINCT COALESCE(user_id::text, '')) FROM shop_view_events WHERE viewed_at >= %s", (since,))
+        top_shops = rds_q("""
+            SELECT e.shop_id, COUNT(*) AS views
+            FROM shop_view_events e
+            WHERE e.viewed_at >= %s
+            GROUP BY e.shop_id ORDER BY views DESC LIMIT 10
+        """, (since,))
+    except Exception as e:
+        print(f"[경고] shop_view_events 조회 실패: {e}")
+        total_views, uniq_viewers, top_shops = 0, 0, []
 
     # 샵 이름 조회 (Supabase REST)
     shop_ids  = [r["shop_id"] for r in top_shops]
@@ -125,10 +127,14 @@ def main():
     total_codes     = rds_val("SELECT COUNT(*) FROM partner_codes")
     total_used      = rds_val("SELECT COUNT(*) FROM partner_codes WHERE used = TRUE")
 
-    # ── 슬롯 현황 (사장님 등록) ──────────────────────────────────────
-    owner_slots_new = rds_val(
-        "SELECT COUNT(*) FROM slots WHERE source='owner' AND created_at >= %s", (since,)) if True else 0
-    owner_slots_total = rds_val("SELECT COUNT(*) FROM slots WHERE source='owner'")
+    # ── 슬롯 현황 (사장님 등록 — RDS에 없으면 0 처리) ──────────────
+    try:
+        owner_slots_new   = rds_val(
+            "SELECT COUNT(*) FROM slots WHERE source='owner' AND created_at >= %s", (since,))
+        owner_slots_total = rds_val("SELECT COUNT(*) FROM slots WHERE source='owner'")
+    except Exception as e:
+        print(f"[경고] slots 조회 실패: {e}")
+        owner_slots_new, owner_slots_total = 0, 0
 
     # Supabase 슬롯 전체 (스크래퍼 포함)
     supabase_slots  = sb_count("slots?select=id")

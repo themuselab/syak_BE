@@ -1,60 +1,64 @@
-import { Pool } from 'pg';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { ISlotRepository } from '../ports/ISlotRepository';
 import { Slot, SlotSearchQuery, ShopWithSlots } from '../domain/Slot';
 
 export class PgSlotRepository implements ISlotRepository {
-  constructor(private readonly pool: Pool) {}
+  constructor(private readonly sb: SupabaseClient) {}
 
   async findByShop(shopId: string, dates: string[]): Promise<Slot[]> {
-    const { rows } = await this.pool.query(
-      `SELECT shop_id, date::text, to_char(start_time, 'HH24:MI') AS start_time
-       FROM slots
-       WHERE shop_id = $1 AND date = ANY($2::date[])
-       ORDER BY date, start_time`,
-      [shopId, dates],
-    );
-    return rows.map((r) => ({ shopId: r.shop_id, date: r.date, startTime: r.start_time }));
+    const { data, error } = await this.sb
+      .from('slots')
+      .select('shop_id, date, start_time')
+      .eq('shop_id', shopId)
+      .in('date', dates)
+      .order('date')
+      .order('start_time');
+
+    if (error) throw error;
+    return (data ?? []).map(r => ({
+      shopId:    r.shop_id as string,
+      date:      r.date as string,
+      startTime: (r.start_time as string).slice(0, 5), // 'HH:MM:SS' → 'HH:MM'
+    }));
   }
 
   async search(query: SlotSearchQuery): Promise<ShopWithSlots[]> {
-    const timeConditions = query.times.map((t) => {
-      const [h, m] = t.split(':');
-      return `${h.padStart(2, '0')}:${(m ?? '00').padStart(2, '0')}`;
-    });
+    const timeSet = new Set(
+      query.times.map(t => {
+        const [h, m] = t.split(':');
+        return `${h.padStart(2, '0')}:${(m ?? '00').padStart(2, '0')}`;
+      }),
+    );
 
-    const params: unknown[] = [query.dates, timeConditions];
-    let districtClause = '';
-    if (query.districts?.length) {
-      params.push(query.districts);
-      districtClause = `AND s.gu = ANY($${params.length})`;
-    }
+    let q = this.sb
+      .from('slots')
+      .select('shop_id, date, start_time, shops!inner(name, gu)')
+      .in('date', query.dates);
 
-    const { rows } = await this.pool.query(
-      `SELECT sl.shop_id,
-              s.name AS shop_name,
-              s.gu   AS district,
-              sl.date::text,
-              to_char(sl.start_time, 'HH24:MI') AS start_time
-       FROM slots sl
-       JOIN shops s ON s.id = sl.shop_id
-       WHERE sl.date = ANY($1::date[])
-         AND to_char(sl.start_time, 'HH24:MI') = ANY($2)
-         ${districtClause}
-       ORDER BY sl.date, sl.start_time`,
-      params,
+    if (query.districts?.length) q = q.in('shops.gu', query.districts);
+
+    const { data, error } = await q;
+    if (error) throw error;
+
+    const filtered = (data ?? []).filter(
+      row => timeSet.has((row.start_time as string).slice(0, 5)),
     );
 
     const grouped = new Map<string, ShopWithSlots>();
-    for (const row of rows) {
-      if (!grouped.has(row.shop_id)) {
-        grouped.set(row.shop_id, {
-          shopId:         row.shop_id,
-          shopName:       row.shop_name,
-          district:       row.district,
+    for (const row of filtered) {
+      const shop = (row as Record<string, unknown>).shops as { name: string; gu: string } | null;
+      if (!grouped.has(row.shop_id as string)) {
+        grouped.set(row.shop_id as string, {
+          shopId:         row.shop_id as string,
+          shopName:       shop?.name ?? '',
+          district:       shop?.gu ?? '',
           availableSlots: [],
         });
       }
-      grouped.get(row.shop_id)!.availableSlots.push({ date: row.date, time: row.start_time });
+      grouped.get(row.shop_id as string)!.availableSlots.push({
+        date: row.date as string,
+        time: (row.start_time as string).slice(0, 5),
+      });
     }
     return Array.from(grouped.values());
   }

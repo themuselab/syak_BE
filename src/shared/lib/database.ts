@@ -1,8 +1,11 @@
 import { Pool } from 'pg';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import ws from 'ws';
 import { logger } from '../logger';
 
 let rdsPool: Pool | null = null;
 let supabasePool: Pool | null = null;
+let sbClient: SupabaseClient | null = null;
 
 function makePool(url: string, name: string): Pool {
   const pool = new Pool({
@@ -25,6 +28,19 @@ export function getRdsPool(): Pool {
 export function getSupabasePool(): Pool {
   if (!supabasePool) supabasePool = makePool(process.env.SUPABASE_DATABASE_URL!, 'supabase');
   return supabasePool;
+}
+
+/** Supabase REST API 클라이언트 — 샵/슬롯 읽기 + 어드민 샵 CRUD */
+export function getSupabaseClient(): SupabaseClient {
+  if (!sbClient) {
+    sbClient = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SECRET_KEY!,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { realtime: { transport: ws as any } },
+    );
+  }
+  return sbClient;
 }
 
 export async function closePool(): Promise<void> {

@@ -12,6 +12,8 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.108.2",
+    "@types/ws": "^8.18.1",
     "apple-signin-auth": "^1.7.3",
     "axios": "^1.6.7",
     "cookie-parser": "^1.4.7",
@@ -24,7 +26,8 @@
     "pg": "^8.11.3",
     "pino": "^8.17.2",
     "pino-http": "^9.0.0",
-    "pino-pretty": "^10.3.1"
+    "pino-pretty": "^10.3.1",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",

@@ -1,4 +1,4 @@
-import { getRdsPool, getSupabasePool } from '../shared/lib/database';
+import { getRdsPool, getSupabasePool, getSupabaseClient } from '../shared/lib/database';
 import { SlotListener } from '../shared/lib/slotListener';
 
 // Admin
@@ -102,11 +102,13 @@ export interface AppDependencies {
 }
 
 export function buildDependencies(): AppDependencies {
-  // ── DB 풀 분리 ─────────────────────────────────────────────
+  // ── DB 연결 ─────────────────────────────────────────────────
   // rds      : 사용자 데이터 (users, favorites, notifications, ...)
-  // supabase : 샵/슬롯 읽기 전용 + LISTEN/NOTIFY
+  // sbClient : 샵/슬롯 읽기 + 어드민 CRUD (Supabase REST API — 무료)
+  // supabase : LISTEN/NOTIFY 전용 Pool (SlotListener만 사용)
   const rds = getRdsPool();
-  const supabase = getSupabasePool();
+  const supabase = getSupabasePool();        // SlotListener 전용
+  const sbClient = getSupabaseClient();      // 샵/슬롯/어드민
 
   // ── Redis 캐시 (샵 목록/상세 캐싱) ───────────────────────────
   // REDIS_URL 없으면 NullCacheService로 fallback (캐시 미사용)
@@ -135,8 +137,8 @@ export function buildDependencies(): AppDependencies {
   const recordClick = new RecordReservationClickUseCase(analyticsRepo);
   const analyticsController = new AnalyticsController(new GetShopAnalyticsUseCase(analyticsRepo));
 
-  // ── Catalog (Supabase — 읽기 전용, Redis 캐시) ──────────────
-  const shopRepo = new PgShopRepository(supabase, cache);
+  // ── Catalog (Supabase REST API — 읽기 전용, Redis 캐시) ──────
+  const shopRepo = new PgShopRepository(sbClient, cache);
   const catalogController = new CatalogController(
     new GetShopsUseCase(shopRepo),
     new GetShopDetailUseCase(shopRepo),
@@ -144,8 +146,8 @@ export function buildDependencies(): AppDependencies {
     recordClick,
   );
 
-  // ── Reservation (Supabase — 읽기 전용) ─────────────────────
-  const slotRepo = new PgSlotRepository(supabase);
+  // ── Reservation (Supabase REST API — 읽기 전용) ─────────────
+  const slotRepo = new PgSlotRepository(sbClient);
   const reservationController = new ReservationController(
     new GetShopSlotsUseCase(slotRepo),
     new SearchAvailableSlotsUseCase(slotRepo),
@@ -201,7 +203,7 @@ export function buildDependencies(): AppDependencies {
   );
 
   // ── Admin (env 기반 단일 계정) ───────────────────────────────
-  const adminController = new AdminController(rds, supabase);
+  const adminController = new AdminController(rds, sbClient);
   const inquiryController = new InquiryController(rds);
 
   // ── Real-time (Supabase LISTEN/NOTIFY) ───────────────────

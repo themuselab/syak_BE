@@ -6,3 +6,4 @@ dist/
 coverage/
 
 syak-ec2.pem
+*firebase*adminsdk*.json

@@ -3,6 +3,7 @@ import { GetNotificationsUseCase } from '../application/GetNotificationsUseCase'
 import { GetSettingsUseCase } from '../application/GetSettingsUseCase';
 import { UpdateSettingsUseCase } from '../application/UpdateSettingsUseCase';
 import { DispatchSlotNotificationsUseCase } from '../application/DispatchSlotNotificationsUseCase';
+import { MarkReadUseCase } from '../application/MarkReadUseCase';
 
 export class NotificationController {
   constructor(
@@ -10,6 +11,7 @@ export class NotificationController {
     private readonly getSettings: GetSettingsUseCase,
     private readonly updateSettings: UpdateSettingsUseCase,
     private readonly dispatch: DispatchSlotNotificationsUseCase,
+    private readonly markReadUC: MarkReadUseCase,
   ) {}
 
   list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -30,6 +32,13 @@ export class NotificationController {
     try {
       const settings = await this.updateSettings.execute(req.user!.sub, req.body);
       res.json(settings);
+    } catch (err) { next(err); }
+  };
+
+  markRead = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      await this.markReadUC.execute(req.params.id, req.user!.sub);
+      res.status(204).send();
     } catch (err) { next(err); }
   };
 

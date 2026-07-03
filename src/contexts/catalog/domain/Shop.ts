@@ -1,4 +1,4 @@
-export type PriceTier = '1만원대' | '2만원대' | '3만원대' | '4만원대+';
+export type PriceTier = '1만원대' | '2만원대' | '3만원대' | '4만원이상';
 export type Category =
   | '네일' | '헤어' | '왁싱' | '반영구'
   | '속눈썹' | '마사지' | '피부' | '태닝';

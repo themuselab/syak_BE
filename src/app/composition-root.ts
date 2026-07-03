@@ -73,6 +73,7 @@ import { GetNotificationsUseCase } from '../contexts/notification/application/Ge
 import { GetSettingsUseCase } from '../contexts/notification/application/GetSettingsUseCase';
 import { UpdateSettingsUseCase } from '../contexts/notification/application/UpdateSettingsUseCase';
 import { DispatchSlotNotificationsUseCase } from '../contexts/notification/application/DispatchSlotNotificationsUseCase';
+import { MarkReadUseCase } from '../contexts/notification/application/MarkReadUseCase';
 import { NotificationController } from '../contexts/notification/interface/NotificationController';
 
 // User
@@ -170,6 +171,7 @@ export function buildDependencies(): AppDependencies {
     new GetSettingsUseCase(notifRepo),
     new UpdateSettingsUseCase(notifRepo),
     dispatchUseCase,
+    new MarkReadUseCase(notifRepo),
   );
 
   // ── User (RDS) ────────────────────────────────────────────

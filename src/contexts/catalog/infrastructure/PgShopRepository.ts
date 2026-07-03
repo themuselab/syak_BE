@@ -27,15 +27,21 @@ export class PgShopRepository implements IShopRepository {
     const cached = await this.cache.get<ShopListResult>(cacheKey);
     if (cached) return cached;
 
-    // 날짜/시간 슬롯 필터: slots 테이블에서 shop_id 선조회
+    // 슬롯 테이블 사전 조회 (slotDate 또는 availableWithinDays)
     let slotShopIds: string[] | null = null;
-    if (filter.slotDate) {
-      let slotQ = this.sb
-        .from('slots')
-        .select('shop_id')
-        .eq('slot_date', filter.slotDate);
-      if (filter.slotTime) {
-        slotQ = slotQ.eq('start_time', `${filter.slotTime}:00`);
+    if (filter.slotDate || filter.availableWithinDays) {
+      let slotQ = this.sb.from('slots').select('shop_id');
+      if (filter.slotDate) {
+        slotQ = slotQ.eq('slot_date', filter.slotDate);
+        if (filter.slotTime) slotQ = slotQ.eq('start_time', `${filter.slotTime}:00`);
+      } else if (filter.availableWithinDays) {
+        const today = new Date();
+        const dates = Array.from({ length: filter.availableWithinDays }, (_, i) => {
+          const d = new Date(today);
+          d.setDate(d.getDate() + i);
+          return d.toISOString().slice(0, 10);
+        });
+        slotQ = slotQ.in('slot_date', dates);
       }
       const { data: slotRows } = await slotQ;
       slotShopIds = [...new Set((slotRows ?? []).map((r: { shop_id: string }) => r.shop_id))];
@@ -66,6 +72,18 @@ export class PgShopRepository implements IShopRepository {
     if (filter.districts?.length)  q = q.in('gu', filter.districts);
     if (filter.q)                  q = q.ilike('name', `%${filter.q}%`);
     if (slotShopIds)               q = q.in('id', slotShopIds);
+
+    // 위치 기반 bounding box 필터
+    if (filter.lat != null && filter.lng != null) {
+      const r = filter.radius ?? 5;
+      const latDelta = r / 111;
+      const lngDelta = r / (111 * Math.cos((filter.lat * Math.PI) / 180));
+      q = q
+        .gte('lat', filter.lat - latDelta)
+        .lte('lat', filter.lat + latDelta)
+        .gte('lng', filter.lng - lngDelta)
+        .lte('lng', filter.lng + lngDelta);
+    }
 
     const sort: SortOrder = filter.sort ?? 'default';
     if (sort === 'price_asc') {
@@ -116,7 +134,7 @@ export class PgShopRepository implements IShopRepository {
     return {
       id:          row.id as string,
       name:        row.name as string,
-      region:      '서울',
+      region:      null,
       district:    row.gu as string | null,
       minPrice:    row.min_price as number | null,
       priceTier:   row.price_tier as PriceTier | null,

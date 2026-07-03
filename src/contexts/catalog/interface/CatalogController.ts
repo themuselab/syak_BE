@@ -31,8 +31,14 @@ export class CatalogController {
           : undefined,
         hasEvent: req.query.has_event === 'true',
         hasSlot: req.query.has_slot === 'true',
+        availableWithinDays: req.query.available_within_days
+          ? parseInt(req.query.available_within_days as string, 10)
+          : undefined,
         slotDate: req.query.slot_date as string | undefined,
         slotTime: req.query.slot_time as string | undefined,
+        lat: req.query.lat ? parseFloat(req.query.lat as string) : undefined,
+        lng: req.query.lng ? parseFloat(req.query.lng as string) : undefined,
+        radius: req.query.radius ? parseFloat(req.query.radius as string) : undefined,
         page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
         limit: Math.min(req.query.limit ? parseInt(req.query.limit as string, 10) : 20, 100),
       });

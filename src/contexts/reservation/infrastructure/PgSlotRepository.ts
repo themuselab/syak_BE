@@ -8,16 +8,16 @@ export class PgSlotRepository implements ISlotRepository {
   async findByShop(shopId: string, dates: string[]): Promise<Slot[]> {
     const { data, error } = await this.sb
       .from('slots')
-      .select('shop_id, date, start_time')
+      .select('shop_id, slot_date, start_time')
       .eq('shop_id', shopId)
-      .in('date', dates)
-      .order('date')
+      .in('slot_date', dates)
+      .order('slot_date')
       .order('start_time');
 
     if (error) throw error;
     return (data ?? []).map(r => ({
       shopId:    r.shop_id as string,
-      date:      r.date as string,
+      date:      r.slot_date as string,
       startTime: (r.start_time as string).slice(0, 5), // 'HH:MM:SS' → 'HH:MM'
     }));
   }
@@ -32,8 +32,8 @@ export class PgSlotRepository implements ISlotRepository {
 
     let q = this.sb
       .from('slots')
-      .select('shop_id, date, start_time, shops!inner(name, gu)')
-      .in('date', query.dates);
+      .select('shop_id, slot_date, start_time, shops!inner(name, gu)')
+      .in('slot_date', query.dates);
 
     if (query.districts?.length) q = q.in('shops.gu', query.districts);
 
@@ -56,7 +56,7 @@ export class PgSlotRepository implements ISlotRepository {
         });
       }
       grouped.get(row.shop_id as string)!.availableSlots.push({
-        date: row.date as string,
+        date: row.slot_date as string,
         time: (row.start_time as string).slice(0, 5),
       });
     }

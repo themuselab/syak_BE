@@ -17,10 +17,15 @@ export class DispatchSlotNotificationsUseCase {
     private readonly pushService: IPushService,
   ) {}
 
-  async execute(events: SlotEvent[]): Promise<{ dispatched: number }> {
+  async execute(events: SlotEvent[], todayOnly = true): Promise<{ dispatched: number }> {
+    const today = new Date().toISOString().slice(0, 10);
+    const filtered = todayOnly
+      ? events.filter(e => e.slotDate === today)
+      : events;
+
     let dispatched = 0;
 
-    for (const event of events) {
+    for (const event of filtered) {
       const [favoriteTargets, nearTargets] = await Promise.all([
         this.notifRepo.findFavoriteTargets(event.shopId),
         event.shopLat && event.shopLng
@@ -36,12 +41,8 @@ export class DispatchSlotNotificationsUseCase {
       });
 
       for (const target of allTargets) {
+        // 알림 row는 push 성공 여부와 무관하게 항상 저장
         try {
-          await this.pushService.send(target.fcmToken, {
-            title: `${event.shopName}에 빈자리가 생겼어요!`,
-            body: `오늘 ${event.slotTime} 예약 가능`,
-            data: { shopId: event.shopId, slotDate: event.slotDate, slotTime: event.slotTime },
-          });
           await this.notifRepo.insert({
             userId: target.userId,
             shopId: event.shopId,
@@ -51,8 +52,20 @@ export class DispatchSlotNotificationsUseCase {
             slotDate: event.slotDate,
           });
           dispatched++;
-        } catch (err) {
-          logger.warn({ err, userId: target.userId, shopId: event.shopId }, 'Push dispatch failed');
+        } catch (insertErr) {
+          logger.warn({ insertErr, userId: target.userId }, 'Notification insert failed — skipping push');
+          continue;
+        }
+
+        // push는 별도 try/catch — 실패해도 알림 목록에는 남음
+        try {
+          await this.pushService.send(target.fcmToken, {
+            title: `${event.shopName}에 빈자리가 생겼어요!`,
+            body: `오늘 ${event.slotTime} 예약 가능`,
+            data: { shopId: event.shopId, slotDate: event.slotDate, slotTime: event.slotTime },
+          });
+        } catch (pushErr) {
+          logger.warn({ pushErr, userId: target.userId, shopId: event.shopId }, 'Push send failed (notification saved)');
         }
       }
     }

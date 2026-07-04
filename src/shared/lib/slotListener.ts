@@ -23,7 +23,10 @@ export class SlotListener {
   private async connect(): Promise<void> {
     // LISTEN requires a dedicated client (not pool)
     // Supabase 직접 연결 필수 — PgBouncer 풀러는 LISTEN/NOTIFY 미지원
-    this.client = new Client({ connectionString: process.env.SUPABASE_DATABASE_URL });
+    this.client = new Client({
+      connectionString: process.env.SUPABASE_DATABASE_URL,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    });
 
     try {
       await this.client.connect();

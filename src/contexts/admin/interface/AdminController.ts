@@ -52,7 +52,7 @@ export class AdminController {
       const sessionToken = process.env.ADMIN_SESSION_TOKEN ?? crypto.randomBytes(32).toString('hex');
       res.cookie('syak_admin', sessionToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: process.env.COOKIE_SECURE === 'true',
         sameSite: 'strict',
         maxAge: 8 * 60 * 60 * 1000,
       });

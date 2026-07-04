@@ -30,18 +30,17 @@ export class PgSlotRepository implements ISlotRepository {
       }),
     );
 
-    // slots에 shops FK가 없으므로 두 단계로 조회
+    // DB 레벨에서 날짜+시간 필터링 (slots에 shops FK 없어 join 불가 → 두 단계 조회)
+    const dbTimes = [...timeSet].map(t => `${t}:00`); // 'HH:MM' → 'HH:MM:00'
     const { data: slotData, error: slotError } = await this.sb
       .from('slots')
       .select('shop_id, slot_date, start_time')
-      .in('slot_date', query.dates);
+      .in('slot_date', query.dates)
+      .in('start_time', dbTimes);
 
     if (slotError) throw slotError;
 
-    const filtered = (slotData ?? []).filter(
-      row => timeSet.has((row.start_time as string).slice(0, 5)),
-    );
-
+    const filtered = slotData ?? [];
     if (!filtered.length) return [];
 
     const shopIds = [...new Set(filtered.map(r => r.shop_id as string))];

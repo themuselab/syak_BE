@@ -30,32 +30,48 @@ export class PgSlotRepository implements ISlotRepository {
       }),
     );
 
-    let q = this.sb
+    // slots에 shops FK가 없으므로 두 단계로 조회
+    const { data: slotData, error: slotError } = await this.sb
       .from('slots')
-      .select('shop_id, slot_date, start_time, shops!inner(name, gu)')
+      .select('shop_id, slot_date, start_time')
       .in('slot_date', query.dates);
 
-    if (query.districts?.length) q = q.in('shops.gu', query.districts);
+    if (slotError) throw slotError;
 
-    const { data, error } = await q;
-    if (error) throw error;
-
-    const filtered = (data ?? []).filter(
+    const filtered = (slotData ?? []).filter(
       row => timeSet.has((row.start_time as string).slice(0, 5)),
     );
 
+    if (!filtered.length) return [];
+
+    const shopIds = [...new Set(filtered.map(r => r.shop_id as string))];
+
+    let shopQ = this.sb
+      .from('shops')
+      .select('id, name, gu')
+      .in('id', shopIds);
+
+    if (query.districts?.length) shopQ = shopQ.in('gu', query.districts);
+
+    const { data: shopData, error: shopError } = await shopQ;
+    if (shopError) throw shopError;
+
+    const shopMap = new Map((shopData ?? []).map(s => [s.id as string, s]));
+
     const grouped = new Map<string, ShopWithSlots>();
     for (const row of filtered) {
-      const shop = (row as Record<string, unknown>).shops as { name: string; gu: string } | null;
-      if (!grouped.has(row.shop_id as string)) {
-        grouped.set(row.shop_id as string, {
-          shopId:         row.shop_id as string,
-          shopName:       shop?.name ?? '',
-          district:       shop?.gu ?? '',
+      const sid = row.shop_id as string;
+      const shop = shopMap.get(sid);
+      if (!shop) continue; // district 필터로 제외된 샵
+      if (!grouped.has(sid)) {
+        grouped.set(sid, {
+          shopId:         sid,
+          shopName:       shop.name as string,
+          district:       shop.gu as string,
           availableSlots: [],
         });
       }
-      grouped.get(row.shop_id as string)!.availableSlots.push({
+      grouped.get(sid)!.availableSlots.push({
         date: row.slot_date as string,
         time: (row.start_time as string).slice(0, 5),
       });

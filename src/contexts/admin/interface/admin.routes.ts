@@ -14,6 +14,7 @@ export function adminRouter(admin: AdminController): Router {
 
   router.get('/events',                      admin.stream);            // SSE 실시간 (AD-002~AD-012 대시보드)
   router.get('/dashboard',                   admin.dashboardSummary);  // AD-001 (SSE fallback 초기 로드)
+  router.get('/daily-report',                admin.dailyReport);       // 첫 진입 일일 리포트 모달
 
   // 사장님 계정 관리
   router.get('/owners',                      admin.listOwners);            // AD-012
@@ -28,6 +29,7 @@ export function adminRouter(admin: AdminController): Router {
   router.get('/partner-shops',              admin.listPartnerShops);       // AD-011
 
   // 전체 샵 DB 조회 + 등록/수정/삭제
+  router.get('/shops/filters',              admin.listShopFilters);        // 카테고리·지역 선택지
   router.get('/shops',                      admin.listAllShops);           // AD-009
   router.post('/shops',                     admin.createShop);             // AD-008
   router.patch('/shops/:shopId',            admin.updateShop);             // AD-009
@@ -40,6 +42,13 @@ export function adminRouter(admin: AdminController): Router {
   // 도입 문의 (SO-000a 폼 → 관리자 검토 → AD-008 샵 등록)
   router.get('/inquiries',                  admin.listInquiries);          // AD-008
   router.patch('/inquiries/:inquiryId',     admin.updateInquiry);          // AD-008
+
+  // 마케팅 성과 스냅샷 (인스타·쓰레드·메타 광고 — GitHub Actions가 Supabase에 축적)
+  router.get('/marketing/dates',            admin.listMarketingDates);
+  router.get('/marketing/trend',            admin.listMarketingTrend);   // 카드 클릭 시 추세 그래프
+  router.get('/marketing',                  admin.getMarketing);
+  router.post('/marketing/images/generate',  admin.generateMarketingImages); // NVIDIA FLUX → Storage (기본 5장, ~15초)
+  router.delete('/marketing/images/:imageId', admin.deleteMarketingImage);   // Storage 객체 + 스냅샷 동시 삭제
 
   // 통계
   router.get('/stats/shop-views',           admin.shopViewStats);          // AD-002

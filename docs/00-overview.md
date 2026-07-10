@@ -15,7 +15,10 @@
 | 환경 | URL |
 |---|---|
 | 개발 | `http://localhost:3000/api/v1` |
-| 운영 | `https://api.syak.app/api/v1` (예정) |
+| 운영 | `https://api.themuselab.kr/api/v1` |
+
+> 관리자 웹: `https://admin.themuselab.kr` · 헬스체크: `https://api.themuselab.kr/health`
+> 앱 연동/마이그레이션 가이드: [09-frontend-integration.md](09-frontend-integration.md)
 
 ---
 

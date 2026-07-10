@@ -1,7 +1,10 @@
 # Syak Backend API 문서
 
-**Base URL (Production):** `http://54.116.107.78/api/v1`  
+**Base URL (Production):** `https://api.themuselab.kr/api/v1`  
 **Base URL (Local):** `http://localhost:3000/api/v1`
+
+> 2026-07-09부터 운영 API는 HTTPS 도메인으로 전환되었습니다.
+> 구 주소 `http://54.116.107.78/api/v1` 는 폐기 예정입니다. 앱 연동 가이드: [09-frontend-integration.md](docs/09-frontend-integration.md)
 
 ---
 
@@ -12,7 +15,7 @@
 | `Authorization: Bearer <accessToken>` | 소비자 JWT | 소비자 인증 필요 API |
 | `Authorization: Bearer <ownerAccessToken>` | 사장님 JWT | 사장님 인증 필요 API |
 | `X-Internal-Key: <INTERNAL_API_KEY>` | 서버간 비밀키 | 내부 API (GitHub Actions 전용) |
-| `Cookie: admin_session=<token>` | 어드민 세션 | 관리자 API |
+| `Cookie: syak_admin=<token>` | 어드민 세션 (HttpOnly, SameSite=Strict, 8시간) | 관리자 API |
 
 ---
 
@@ -219,6 +222,13 @@
 | `PATCH` | `/admin/users/:userId/status` | Cookie | 회원 상태 변경 |
 | `GET` | `/admin/inquiries` | Cookie | 도입 문의 목록 |
 | `PATCH` | `/admin/inquiries/:inquiryId` | Cookie | 도입 문의 상태 변경 |
+| `GET` | `/admin/marketing/dates` | Cookie | 마케팅 스냅샷 보유 날짜 |
+| `GET` | `/admin/marketing/trend` | Cookie | 마케팅 지표 추세 |
+| `GET` | `/admin/marketing` | Cookie | 마케팅 스냅샷 (날짜 지정/최신) |
+| `POST` | `/admin/marketing/images/generate` | Cookie | 시안 이미지 생성 (NVIDIA FLUX) |
+| `DELETE` | `/admin/marketing/images/:imageId` | Cookie | 시안 이미지 삭제 (Storage 포함) |
+| `GET` | `/admin/daily-report` | Cookie | 전날 요약 리포트 (첫 진입 모달) |
+| `GET` | `/admin/shops/filters` | Cookie | 샵 필터 옵션 (카테고리 · 시도/시군구) |
 | `GET` | `/admin/stats/shop-views` | Cookie | 샵 조회수 통계 |
 | `GET` | `/admin/stats/reservation-clicks` | Cookie | 예약 클릭 통계 |
 | `GET` | `/admin/stats/cancel-requests` | Cookie | 취소 요청 통계 |

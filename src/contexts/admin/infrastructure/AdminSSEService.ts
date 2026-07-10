@@ -16,6 +16,8 @@ export interface AdminSummary {
   partnerShops: number;
   views7d: number;
   openCodes: number;
+  /** 검토 대기 중인 도입 문의 수 — 관리자 종 알림 표시용 */
+  pendingInquiries: number;
   ts: string;
 }
 
@@ -71,6 +73,7 @@ export class AdminSSEService {
       partnerRes,
       { rows: cRows },
       viewsRes,
+      { rows: iRows },
     ] = await Promise.all([
       this.rds.query(`SELECT COUNT(*) AS cnt FROM users`),
       this.rds.query(`SELECT COUNT(*) AS cnt FROM owner_accounts`),
@@ -79,6 +82,8 @@ export class AdminSSEService {
       this.sb.from('events').select('id', { count: 'exact', head: true })
         .eq('event', 'detail_view')
         .gte('created_at', since7d),
+      // 종 알림용: 검토 대기 중인 도입 문의
+      this.rds.query(`SELECT COUNT(*) AS cnt FROM shop_inquiries WHERE status = 'pending'`),
     ]);
 
     return {
@@ -87,6 +92,7 @@ export class AdminSSEService {
       partnerShops: partnerRes.count ?? 0,
       views7d:      viewsRes.count ?? 0,
       openCodes:    parseInt(cRows[0].cnt as string, 10),
+      pendingInquiries: parseInt(iRows[0].cnt as string, 10),
       ts:           new Date().toISOString(),
     };
   }

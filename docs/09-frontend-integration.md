@@ -78,12 +78,19 @@ axios.create({ baseURL, withCredentials: true })
 - 갱신은 `POST /auth/token/refresh` → `204`. `syak_refresh` 쿠키는
   **`path=/api/v1/auth/token/refresh`** 로 제한돼 그 경로에서만 전송됩니다.
 
-> 🔴 **운영 설정 확인 필요 (2026-07-10 기준)**
-> EC2 `syak.env` 가 `COOKIE_SECURE=false`, `COOKIE_SAME_SITE=none` 입니다.
-> **브라우저는 `Secure` 없는 `SameSite=None` 쿠키를 거부**하므로, 웹 클라이언트가 이 API를
-> 직접 호출하면 로그인이 되지 않습니다. 네이티브 앱은 대개 강제하지 않아 지금은 문제가 드러나지 않습니다.
-> 이미 HTTPS로 서비스 중이니 `COOKIE_SECURE=true` 로 바꾸는 것이 맞습니다.
-> (관리자 웹은 `sameSite: 'strict'` 가 코드에 고정돼 있어 영향받지 않습니다)
+- 운영 쿠키는 `Secure` 가 붙으므로 **HTTPS로만 오갑니다.** 평문 `http://` 로 호출하면 쿠키가
+  저장·전송되지 않아 로그인 직후 모든 인증 API가 `401` 이 됩니다.
+
+```
+Set-Cookie: syak_admin=...; HttpOnly; Secure; SameSite=Strict     # 관리자 웹
+Set-Cookie: syak_access=...; HttpOnly; Secure; SameSite=None      # 앱 (COOKIE_SAME_SITE=none)
+```
+
+> **2026-07-10 수정 이력** — 그전까지 운영은 `COOKIE_SECURE=false` 인데 `COOKIE_SAME_SITE=none`
+> 이었습니다. `Secure` 없는 `SameSite=None` 은 스펙상 거부 대상이라, 쿠키 저장소 구현에 따라
+> 조용히 버려질 수 있는 상태였습니다. `COOKIE_SECURE=true` 로 정정했습니다.
+> `http://api.themuselab.kr` 는 301로 https에 리다이렉트되고 구 주소 `http://54.116.107.78` 은
+> 이미 404라, 평문 경로는 존재하지 않습니다.
 
 ### 3-3. CORS
 - 관리자 웹은 API와 **동일 출처**(`admin.themuselab.kr` 에서 `/api/*` 프록시)라 CORS 없음.

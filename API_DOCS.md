@@ -249,7 +249,7 @@
 ## 공통 에러 응답
 
 ```json
-{ "error": "에러 메시지", "code": "ERROR_CODE" }
+{ "code": "ERROR_CODE", "message": "에러 메시지" }
 ```
 
 | HTTP 코드 | 의미 |

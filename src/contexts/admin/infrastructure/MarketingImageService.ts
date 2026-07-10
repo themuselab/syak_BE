@@ -26,11 +26,18 @@ interface Recipes {
   recipes: { caption: string; scene: string }[];
 }
 
+/** 설정 누락(키·레시피 파일)은 서버 장애가 아니므로 따로 구분해 503으로 응답한다. */
+export class ImageGenConfigError extends Error {}
+
 let cached: Recipes | null = null;
 function loadRecipes(): Recipes {
   if (!cached) {
     const p = resolve(process.cwd(), 'scripts/marketing/image-recipes.json');
-    cached = JSON.parse(readFileSync(p, 'utf8')) as Recipes;
+    try {
+      cached = JSON.parse(readFileSync(p, 'utf8')) as Recipes;
+    } catch {
+      throw new ImageGenConfigError(`이미지 레시피 파일을 찾을 수 없습니다 (${p}). Dockerfile의 COPY 확인 필요`);
+    }
   }
   return cached;
 }
@@ -38,7 +45,7 @@ function loadRecipes(): Recipes {
 /** NVIDIA로 1장 생성 → JPEG Buffer */
 async function generateOne(prompt: string, model: string, steps: number, seed: number): Promise<Buffer> {
   const key = process.env.NVIDIA_API_KEY_FLUX || process.env.NVIDIA_API_KEY;
-  if (!key) throw new Error('NVIDIA_API_KEY 가 설정되지 않았습니다');
+  if (!key) throw new ImageGenConfigError('NVIDIA_API_KEY 가 서버에 설정되지 않았습니다');
 
   const res = await fetch(`https://ai.api.nvidia.com/v1/genai/${model}`, {
     method: 'POST',
@@ -65,6 +72,10 @@ export async function generateMarketingImages(
   sb: SupabaseClient,
   count: number,
 ): Promise<{ images: MarketingImage[]; added: number; failed: number; date: string }> {
+  // 설정 문제는 개별 생성 실패에 섞여 묻히지 않도록 시작 전에 확인한다
+  if (!process.env.NVIDIA_API_KEY_FLUX && !process.env.NVIDIA_API_KEY) {
+    throw new ImageGenConfigError('NVIDIA_API_KEY 가 서버에 설정되지 않았습니다');
+  }
   const { model, steps, tone, hand, recipes } = loadRecipes();
   const date = todayKst();
 

@@ -5,7 +5,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { Errors } from '../../../shared/errors/AppError';
 import { initAdminSSE, AdminSSEService } from '../infrastructure/AdminSSEService';
 import {
-  generateMarketingImages as runImageGeneration, MARKETING_BUCKET, MarketingImage,
+  generateMarketingImages as runImageGeneration, ImageGenConfigError,
+  MARKETING_BUCKET, MarketingImage,
 } from '../infrastructure/MarketingImageService';
 
 function toCamel(row: Record<string, unknown>): Record<string, unknown> {
@@ -851,6 +852,12 @@ export class AdminController {
       const result = await runImageGeneration(this.sbClient, count);
       res.json(result);
     } catch (err) {
+      // 키·레시피 누락은 운영자가 고칠 문제라 원인을 그대로 보여준다
+      if (err instanceof ImageGenConfigError) {
+        console.error('[generateMarketingImages] config', err.message);
+        res.status(503).json({ code: 'IMAGE_GEN_UNAVAILABLE', message: err.message });
+        return;
+      }
       next(err);
     }
   };
@@ -862,7 +869,7 @@ export class AdminController {
       // 이미지 id는 `YYYY-MM-DD-n` 형식이라 날짜를 유추할 수 있다. 쿼리로 넘어오면 그걸 우선.
       const date = (req.query.date as string | undefined) || imageId.slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-        res.status(400).json({ error: '이미지의 스냅샷 날짜를 확인할 수 없습니다', code: 'BAD_REQUEST' });
+        res.status(400).json({ code: 'VALIDATION_ERROR', message: '이미지의 스냅샷 날짜를 확인할 수 없습니다' });
         return;
       }
 
@@ -877,7 +884,7 @@ export class AdminController {
       const images = row?.data?.images ?? [];
       const target = images.find(im => im.id === imageId);
       if (!target) {
-        res.status(404).json({ error: '이미지를 찾을 수 없습니다', code: 'NOT_FOUND' });
+        res.status(404).json({ code: 'NOT_FOUND', message: '이미지를 찾을 수 없습니다' });
         return;
       }
 

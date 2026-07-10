@@ -1,0 +1,29 @@
+{
+  "_comment": "인스타 시안 이미지 프롬프트 단일 소스. 백엔드 API(MarketingImageService)와 CLI(generate-images.mjs)가 함께 읽는다. 가이드: .claude/skills/marketing-report/image_prompt_guide.md",
+  "model": "black-forest-labs/flux.1-dev",
+  "steps": 45,
+  "tone": "muted desaturated color grade, limited neutral palette of white grey beige and black, low saturation, slightly underexposed with soft deep shadows, moody soft natural light, candid amateur phone snapshot, natural realistic skin with visible pores and texture, subtle film grain, shallow depth of field, photorealistic, sharp focus on the face and hand, no vivid colors, no colorful background, no text, no watermark, no logo",
+  "hand": "anatomically correct hand with exactly five well-formed fingers, clean detailed fingertips, natural finger proportions, short natural almond nude gel nails",
+  "recipes": [
+    {
+      "caption": "차 안 · 누드 젤네일",
+      "scene": "a Korean woman with long dark hair and natural makeup sitting in the back seat of a car wearing a seatbelt, dim car interior, one hand raised gently near her cheek showing nude gel nails, softly blurred muted green trees outside the window, wearing a plain white top"
+    },
+    {
+      "caption": "야경 거리 · 로우키",
+      "scene": "a Korean woman in a beige trench coat standing on a city street at night looking down at her watch, dark low-key scene lit only by blurred streetlights and car headlight bokeh, muted amber and grey tones, hand and nude gel nails visible"
+    },
+    {
+      "caption": "얼굴 클로즈업 · 손등",
+      "scene": "close-up of a Korean woman in a plain white t-shirt on a dim narrow street, one hand raised to the side of her cheek without covering her face, fingers relaxed and slightly curled, back of the hand toward the camera so the glossy nude gel nails on her fingernails are clearly visible, both her face and her hand sharply in focus, dark muted background, soft grey overcast light"
+    },
+    {
+      "caption": "맞잡은 두 손 · 링",
+      "scene": "close-up of two elegant Korean hands loosely clasped together wearing thin silver rings, short natural nude gel nails, resting against a cream ribbed knit sleeve and black trousers, no face in frame, soft indoor window light"
+    },
+    {
+      "caption": "카페 창가 · 밀키누드",
+      "scene": "a Korean woman in a soft cream knit sitting by a dim cafe window, resting one hand near her cheek to show milky nude gel nails, muted beige and grey interior, low warm window light"
+    }
+  ]
+}

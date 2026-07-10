@@ -8,7 +8,7 @@
 |---|---|
 | Runtime | Node.js 20, TypeScript |
 | Framework | Express 4 |
-| Auth | 카카오 / 네이버 / Apple 소셜 로그인, HTTP-only 쿠키 (CSRF 보호) |
+| Auth | 카카오 / 네이버 / Apple 소셜 로그인, HttpOnly 쿠키 |
 | DB (사용자) | AWS RDS PostgreSQL — users, favorites, notifications, refresh_tokens |
 | DB (샵/슬롯) | Supabase PostgreSQL — shops, slots (읽기 전용) |
 | 실시간 | Supabase LISTEN/NOTIFY → FCM 푸시 |
@@ -105,83 +105,124 @@ src/
 | GET | `/api/v1/users/me` | 내 프로필 |
 | DELETE | `/api/v1/users/me` | 회원 탈퇴 |
 
-## 시작하기
+## 시작하기 (레포를 막 클론했다면 이 순서대로)
 
 ### 사전 요구사항
 
 - Node.js 20+
 - Docker & Docker Compose
 
-### 1. 환경 변수 설정
+### 1. 환경 변수
 
 ```bash
 cp .env.example .env
 ```
 
-`.env` 필수 항목:
+`.env.example`의 값이 채워진 항목은 **로컬 개발 기본값이라 그대로 두면 된다.**
+비어 있는 항목만 채우면 서버가 뜬다. 최소로 필요한 건 아래 정도다.
 
-```
-DATABASE_URL=postgresql://...          # AWS RDS (사용자 데이터)
-SUPABASE_DATABASE_URL=postgresql://... # Supabase Direct (port 5432 필수)
-JWT_SECRET=<32자 이상 랜덤 문자열>
-KAKAO_REST_API_KEY=
-NAVER_CLIENT_ID=
-NAVER_CLIENT_SECRET=
-APPLE_TEAM_ID=
-APPLE_KEY_ID=
-APPLE_PRIVATE_KEY=
-FCM_SERVER_KEY=
-INTERNAL_API_KEY=
-```
+| 키 | 없으면 |
+|---|---|
+| `SUPABASE_URL`, `SUPABASE_SECRET_KEY` | 샵/마케팅 조회 전부 실패 |
+| `SUPABASE_DATABASE_URL` | 슬롯 실시간 알림(LISTEN/NOTIFY) 미동작 |
+| `JWT_SECRET` | 로그인 불가 |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_SESSION_TOKEN` | 관리자 로그인 불가 |
+| `NVIDIA_API_KEY_FLUX` | 관리자 "이미지 생성" 버튼만 503 (나머지는 정상) |
+| `REDIS_URL` | 캐시 없이 동작 (에러 아님) |
 
-> Supabase URL은 **반드시 port 5432 Direct connection** 사용. PgBouncer(6543)는 LISTEN/NOTIFY 미지원.
+> Supabase는 **반드시 port 5432 Direct connection**을 쓴다. PgBouncer(6543)는 LISTEN/NOTIFY 미지원.
+> 카카오·네이버는 클라이언트가 받은 `access_token`을 서버가 검증만 하므로 **서버 키가 필요 없다.**
 
-### 2. 개발 서버 (로컬 PostgreSQL 포함)
+### 2. 개발 서버 — 권장 (DB/Redis만 컨테이너, 앱은 네이티브)
 
 ```bash
 npm install
-docker compose up -d db    # 로컬 DB만 기동
-npm run dev                # ts-node-dev hot reload
+docker compose up -d db redis   # Postgres 5432, Redis 6379
+npm run dev                     # ts-node-dev, 소스 저장 시 자동 재시작
 ```
 
-### 3. Docker 전체 스택
+→ `http://localhost:3000` · 헬스체크 `GET /health` → `ok`
+
+### 3. Docker 전체 스택 (앱까지 컨테이너로)
 
 ```bash
-docker compose up --build
+docker compose up --build       # app 3000, db 5432, redis 6379
 ```
 
-서버: `http://localhost:3000`
+`app` 컨테이너는 `.env`를 읽되, `docker-compose.yml`의 `environment:`가
+`DATABASE_URL`/`REDIS_URL`의 호스트를 **`localhost` → 서비스명(`db`, `redis`)으로 덮어쓴다.**
+컨테이너 안에서 `localhost`는 자기 자신이라 이 덮어쓰기가 없으면 `ECONNREFUSED`가 난다.
 
-### 4. DB 초기화
+> 코드를 고치며 개발할 땐 2번(네이티브)이 편하다. 이때 `app` 컨테이너는 꺼둘 것 —
+> 3000 포트를 두고 다투고, 컨테이너 안의 코드는 빌드 시점에 고정돼 있다.
 
-개발용 로컬 DB는 `docker compose up db` 시 `db/init.sql`이 자동 실행된다.
+### 4. 포트 정리
 
-Supabase에는 별도로 `db/supabase-migration.sql`을 SQL Editor에서 실행해야 한다 (슬롯 알림 트리거).
+| 환경 | 컴포넌트 | 포트 |
+|---|---|---|
+| 로컬 | 백엔드 (`npm run dev` 또는 compose `app`) | **3000** |
+| 로컬 | Postgres / Redis (compose) | 5432 / 6379 |
+| 로컬 | 관리자 SPA (`syak_admin` 레포, `npm run dev`) | **3100** → `/api`를 3000으로 프록시 |
+| 운영 | 컨테이너 `syak-green` | 호스트 **3001** → 컨테이너 3000 |
+| 운영 | nginx | 80/443 → `/api/`를 3001로 프록시 |
+
+### 5. DB 초기화
+
+로컬 DB는 `docker compose up db` 시 `db/init.sql`이 자동 실행된다.
+
+Supabase에는 SQL Editor에서 직접 실행해야 하는 것들이 있다.
+
+| 파일 | 용도 |
+|---|---|
+| `db/supabase-migration.sql` | 슬롯 알림 트리거 |
+| `db/migration_marketing.sql` | `marketing_snapshots`, `marketing_tokens` |
+
+이미지 갤러리를 쓰려면 Storage에 **공개 버킷 `marketing-images`** 를 만들어야 한다.
+
+### 6. 빌드 / 실행
+
+```bash
+npm run build   # tsc → dist/
+npm start       # node dist/server.js
+```
 
 ## 인증 흐름
 
 ```
 1. 클라이언트 → POST /auth/kakao { access_token }
+   (소셜 SDK로 받은 토큰. 서버는 카카오 REST 키를 갖지 않는다)
 2. 서버 → 카카오 API로 프로필 검증
 3. DB 조회 → 신규면 users + user_social_accounts 생성
-4. 응답 쿠키: syak_access (15분), syak_refresh (1일, path 제한)
-5. 응답 바디: { user, isNewUser }
+4. 응답 쿠키: syak_access (15분), syak_refresh (1일, path=/api/v1/auth/token/refresh)
+5. 응답 바디: { user, isNewUser }   ← 토큰은 바디에 없다
 
 토큰 갱신:
    클라이언트 → POST /auth/token/refresh (syak_refresh 쿠키 자동 전송)
-   → 새 syak_access 발급 (204)
+   → 새 syak_access 발급 (204, 바디 없음)
 
 소셜 계정 연동:
    로그인 상태에서 → POST /auth/link/naver { access_token }
    → 같은 users.id에 user_social_accounts 추가
-   → 이후 네이버로 로그인해도 동일 계정
 ```
 
-### CSRF 보호
+**인증은 전부 쿠키다. `Authorization: Bearer` 는 어디에서도 받지 않는다.**
 
-- GET 요청 시 `_csrf` 쿠키 자동 발급 (httpOnly: false, HMAC 서명)
-- POST/PUT/PATCH/DELETE 요청 시 `X-CSRF-Token` 헤더 검증
-- 소셜 로그인 초기 요청과 `/internal/` 경로는 CSRF 검증 제외
+| 클라이언트 | 쿠키 |
+|---|---|
+| 소비자 앱 | `syak_access` / `syak_refresh` |
+| 사장님 앱 | `syak_owner_access` / `syak_owner_refresh` |
+| 관리자 웹 | `syak_admin` (8시간) |
+| GitHub Actions | 쿠키 대신 `X-Internal-Key` 헤더 |
+
+→ 네이티브 앱은 HTTP 클라이언트에 쿠키 저장소를 켜야 한다 (RN: `@react-native-cookies/cookies`
+또는 `credentials: 'include'`). 자세한 연동 가이드는 [docs/09-frontend-integration.md](docs/09-frontend-integration.md).
+
+### CSRF
+
+**의도적으로 미적용이다.** 이 API는 네이티브 앱 전용이라 브라우저의 자동 쿠키 첨부가 없고,
+따라서 CSRF가 성립하지 않는다 (`src/server.ts` 주석 참고).
+관리자 웹은 브라우저지만 `SameSite=Strict` 쿠키로 방어한다.
+**일반 웹 클라이언트가 이 API를 직접 쓰게 되면 CSRF 미들웨어를 다시 넣어야 한다.**
 
 ## 테스트
 
@@ -226,16 +267,59 @@ notifications
 ## CI/CD
 
 ```
-push → GitHub Actions
+[ci.yml]              push/PR → main, develop
+  ├── TypeScript 타입 체크
+  ├── Jest 단위 테스트 (커버리지 80%)
+  └── E2E 테스트 (Docker PostgreSQL)
 
-  [ci.yml]
-    ├── TypeScript 타입 체크
-    ├── Jest 단위 테스트 (커버리지 80%)
-    └── E2E 테스트 (Docker PostgreSQL)
+[deploy.yml]          push → master  (= master 푸시는 곧 운영 배포)
+  ├── Dockerfile 빌드 → ghcr.io/themuselab/syak-backend:{sha}
+  └── EC2 SSH → ~/deploy.sh {이미지}
+        ├── docker pull
+        ├── syak-green 재생성 (-p 3001:3000, --env-file ~/syak.env)
+        └── /health 헬스체크 30초
 
-  [deploy.yml] (main 브랜치)
-    ├── Docker 이미지 빌드 → GHCR 푸시
-    └── EC2 SSH → docker pull & restart
+[marketing-snapshot.yml]  매일 08:20 KST + 수동
+  └── node scripts/marketing/daily-snapshot.mjs
+
+[report-app.yml]      매일 08:05 KST — 디스코드 리포트
+```
+
+> ⚠️ `ci.yml`은 `main`/`develop` 트리거라 **`master` 푸시에서는 돌지 않는다.**
+> 즉 CI 통과가 배포의 전제가 아니다. 푸시 전에 로컬에서 `npx tsc --noEmit`과 `npm test`를 돌릴 것.
+
+### 배포 관련 사실들
+
+- 운영 `.env`는 레포가 아니라 **EC2의 `/home/ec2-user/syak.env`** 에 있다. 새 환경변수를 추가하면
+  이 파일에 직접 넣고 컨테이너를 재생성해야 한다 (`--env-file`은 시작 시점에만 읽힌다).
+- `Dockerfile`은 `dist/`와 `scripts/marketing/image-recipes.json`만 런타임 이미지에 넣는다.
+  **런타임에 읽는 파일을 추가하면 `COPY`도 같이 추가**해야 한다. 안 그러면 로컬만 되고 운영은 500.
+- SSH로 `~/deploy.sh`를 직접 돌리면 `docker pull`이 GHCR 인증 만료로 `denied` 날 수 있다.
+  워크플로는 매번 `docker login`을 하므로 문제없다. 수동 재기동은 pull 없이:
+
+```bash
+ssh -i syak-ec2.pem ec2-user@<EC2_IP>
+IMG=$(docker inspect --format '{{.Config.Image}}' syak-green)
+docker rm -f syak-green
+docker run -d --name syak-green --restart unless-stopped \
+  -p 3001:3000 --env-file /home/ec2-user/syak.env "$IMG"
+curl -sf http://127.0.0.1:3001/health
+```
+
+## 관리자 · 마케팅
+
+관리자 SPA는 별도 레포(`themuselab/syak_admin`)이며 `/api/v1/admin/*`을 호출한다.
+쿠키 세션(`syak_admin`)으로 인증한다. → [docs/08-admin.md](docs/08-admin.md)
+
+마케팅 지표는 GitHub Actions가 매일 수집해 Supabase에 쌓고, 관리자 마케팅 탭이 읽는다.
+필요한 토큰은 **EC2가 아니라 레포 Secrets**에 넣는다 (서버 코드는 그 토큰을 읽지 않는다).
+→ [docs/10-marketing-automation.md](docs/10-marketing-automation.md)
+
+```bash
+# 로컬에서 수동 실행 (.env에 토큰을 채운 경우)
+set -a; source .env; set +a
+node scripts/marketing/daily-snapshot.mjs    # 지표 수집 + AI 조언
+node scripts/marketing/generate-images.mjs 5 # 시안 이미지 5장 (관리자 버튼과 동일 로직)
 ```
 
 ## 에러 형식

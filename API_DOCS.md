@@ -10,12 +10,18 @@
 
 ## 인증 방식
 
-| 헤더 | 값 | 대상 |
+**모든 인증은 HttpOnly 쿠키로 한다. `Authorization: Bearer` 는 서버가 읽지 않는다.**
+
+| 전달 | 값 | 대상 |
 |---|---|---|
-| `Authorization: Bearer <accessToken>` | 소비자 JWT | 소비자 인증 필요 API |
-| `Authorization: Bearer <ownerAccessToken>` | 사장님 JWT | 사장님 인증 필요 API |
+| `Cookie: syak_access=<jwt>` | 소비자 액세스 토큰 (15분) | 소비자 인증 필요 API |
+| `Cookie: syak_refresh=<jwt>` | 소비자 갱신 토큰 (1일, path=`/api/v1/auth/token/refresh`) | 토큰 갱신 전용 |
+| `Cookie: syak_owner_access=<jwt>` | 사장님 액세스 토큰 | 사장님 인증 필요 API |
+| `Cookie: syak_admin=<token>` | 어드민 세션 (SameSite=Strict, 8시간) | 관리자 API |
 | `X-Internal-Key: <INTERNAL_API_KEY>` | 서버간 비밀키 | 내부 API (GitHub Actions 전용) |
-| `Cookie: syak_admin=<token>` | 어드민 세션 (HttpOnly, SameSite=Strict, 8시간) | 관리자 API |
+
+쿠키 속성은 `COOKIE_SECURE` / `COOKIE_SAME_SITE` 환경변수로 제어한다 (운영: `true` / `none`).
+네이티브 앱은 HTTP 클라이언트의 쿠키 저장소를 켜야 한다 → [09-frontend-integration.md](docs/09-frontend-integration.md)
 
 ---
 
@@ -36,22 +42,24 @@
 | `POST` | `/auth/kakao` | - | 카카오 로그인 |
 | `POST` | `/auth/naver` | - | 네이버 로그인 |
 | `POST` | `/auth/apple` | - | 애플 로그인 |
-| `POST` | `/auth/link/:provider` | Bearer | 소셜 계정 추가 연동 |
+| `POST` | `/auth/link/:provider` | Cookie | 소셜 계정 추가 연동 |
 | `POST` | `/auth/token/refresh` | - | 액세스 토큰 갱신 |
-| `DELETE` | `/auth/signout` | Bearer | 로그아웃 |
+| `DELETE` | `/auth/signout` | Cookie | 로그아웃 |
 
 **POST `/auth/:provider` Request:**
 ```json
-{ "code": "oauth_authorization_code" }
+{ "access_token": "소셜_SDK로_받은_토큰" }
 ```
-**Response:**
+`code`가 아니라 **소셜 SDK가 발급한 access_token**을 보낸다. 서버는 이를 카카오/네이버/애플에
+직접 검증하며, 서버에 소셜 앱 키를 두지 않는다. (Apple만 `APPLE_TEAM_ID`로 audience를 검증)
+
+**Response `200`(기존 유저) / `201`(신규 유저):**
 ```json
-{
-  "accessToken": "eyJ...",
-  "refreshToken": "eyJ...",
-  "user": { "id": "uuid", "nickname": "홍길동", "provider": "kakao" }
-}
+{ "user": { "id": "uuid", "nickname": "홍길동", "profileImage": null }, "isNewUser": false }
 ```
+**토큰은 응답 바디에 없다.** `Set-Cookie`로 `syak_access`(15분), `syak_refresh`(1일)가 내려온다.
+
+**POST `/auth/token/refresh`** → `204 No Content`. `syak_refresh` 쿠키를 읽어 새 `syak_access`를 심는다.
 
 ---
 
@@ -147,9 +155,9 @@
 
 | Method | Path | 인증 | 설명 |
 |---|---|---|---|
-| `GET` | `/favorites` | Bearer | 즐겨찾기 목록 |
-| `POST` | `/favorites/:shopId` | Bearer | 즐겨찾기 추가 |
-| `DELETE` | `/favorites/:shopId` | Bearer | 즐겨찾기 삭제 |
+| `GET` | `/favorites` | Cookie | 즐겨찾기 목록 |
+| `POST` | `/favorites/:shopId` | Cookie | 즐겨찾기 추가 |
+| `DELETE` | `/favorites/:shopId` | Cookie | 즐겨찾기 삭제 |
 
 ---
 
@@ -157,9 +165,9 @@
 
 | Method | Path | 인증 | 설명 |
 |---|---|---|---|
-| `GET` | `/notifications` | Bearer | 알림 목록 |
-| `GET` | `/notifications/settings` | Bearer | 알림 설정 조회 |
-| `PATCH` | `/notifications/settings` | Bearer | 알림 설정 변경 |
+| `GET` | `/notifications` | Cookie | 알림 목록 |
+| `GET` | `/notifications/settings` | Cookie | 알림 설정 조회 |
+| `PATCH` | `/notifications/settings` | Cookie | 알림 설정 변경 |
 | `POST` | `/notifications/internal/dispatch` | X-Internal-Key | 슬롯 오픈 FCM 발송 (GitHub Actions 전용) |
 
 ---
@@ -168,8 +176,8 @@
 
 | Method | Path | 인증 | 설명 |
 |---|---|---|---|
-| `GET` | `/users/me` | Bearer | 내 프로필 조회 |
-| `DELETE` | `/users/me` | Bearer | 회원 탈퇴 |
+| `GET` | `/users/me` | Cookie | 내 프로필 조회 |
+| `DELETE` | `/users/me` | Cookie | 회원 탈퇴 |
 
 ---
 
@@ -189,14 +197,14 @@
 | `POST` | `/owner/auth/naver` | - | 사장님 네이버 로그인 |
 | `POST` | `/owner/auth/apple` | - | 사장님 애플 로그인 |
 | `POST` | `/owner/auth/token/refresh` | - | 사장님 토큰 갱신 |
-| `POST` | `/owner/auth/sign-out` | Bearer(owner) | 사장님 로그아웃 |
-| `POST` | `/owner/auth/code` | Bearer(owner) | 파트너 코드로 샵 연결 |
-| `GET` | `/owner/auth/me` | Bearer(owner) | 사장님 내 정보 |
-| `GET` | `/owner/slots` | Bearer(owner) + 샵연결 | 내 슬롯 목록 |
-| `POST` | `/owner/slots` | Bearer(owner) + 샵연결 | 슬롯 등록 |
-| `PATCH` | `/owner/slots/:slotId` | Bearer(owner) + 샵연결 | 슬롯 수정 |
-| `DELETE` | `/owner/slots/:slotId` | Bearer(owner) + 샵연결 | 슬롯 삭제 |
-| `GET` | `/owner/analytics` | Bearer(owner) + 샵연결 | 내 샵 분석 데이터 |
+| `POST` | `/owner/auth/sign-out` | Cookie(owner) | 사장님 로그아웃 |
+| `POST` | `/owner/auth/code` | Cookie(owner) | 파트너 코드로 샵 연결 |
+| `GET` | `/owner/auth/me` | Cookie(owner) | 사장님 내 정보 |
+| `GET` | `/owner/slots` | Cookie(owner) + 샵연결 | 내 슬롯 목록 |
+| `POST` | `/owner/slots` | Cookie(owner) + 샵연결 | 슬롯 등록 |
+| `PATCH` | `/owner/slots/:slotId` | Cookie(owner) + 샵연결 | 슬롯 수정 |
+| `DELETE` | `/owner/slots/:slotId` | Cookie(owner) + 샵연결 | 슬롯 삭제 |
+| `GET` | `/owner/analytics` | Cookie(owner) + 샵연결 | 내 샵 분석 데이터 |
 
 ---
 

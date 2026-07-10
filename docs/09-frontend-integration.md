@@ -50,13 +50,40 @@
 → **처음부터 `https://` 로 직접 호출**하세요.
 
 ### 3-2. 인증
+
+🔴 **서버는 `Authorization: Bearer` 헤더를 읽지 않습니다.** 인증은 전부 HttpOnly 쿠키입니다.
+(`src/shared/middleware/auth.middleware.ts` — `req.cookies.syak_access` 만 확인)
+
 | 클라이언트 | 인증 수단 |
 |---|---|
-| RN 앱 (소비자/사장님) | `Authorization: Bearer <accessToken>` — **쿠키 불필요** |
-| 관리자 웹 | `syak_admin` HttpOnly 쿠키 (`SameSite=Strict`), 요청 시 `credentials: 'include'` |
+| RN 앱 (소비자) | `syak_access` (15분) / `syak_refresh` (1일) 쿠키 |
+| RN 앱 (사장님) | `syak_owner_access` / `syak_owner_refresh` 쿠키 |
+| 관리자 웹 | `syak_admin` 쿠키 (`SameSite=Strict`), 요청 시 `credentials: 'include'` |
 | 내부 API (GH Actions) | `X-Internal-Key: <INTERNAL_API_KEY>` |
 
-앱은 Bearer 토큰만 쓰므로 쿠키 관련 설정은 신경 쓸 필요 없습니다.
+로그인 응답 바디에는 **토큰이 없습니다.** `{ user, isNewUser }` 만 오고 토큰은 `Set-Cookie`로 내려옵니다.
+
+**RN 앱이 해야 할 것:** HTTP 클라이언트의 쿠키 저장소를 켜세요.
+
+```ts
+// fetch — RN은 기본적으로 쿠키를 저장/전송하지만 명시하는 편이 안전
+fetch(url, { credentials: 'include' })
+
+// axios
+axios.create({ baseURL, withCredentials: true })
+```
+
+- 쿠키가 유지되지 않으면 로그인 직후 모든 인증 API가 `401`이 납니다.
+- iOS/Android 모두 앱을 지웠다 깔면 쿠키도 사라집니다 (재로그인 필요).
+- 갱신은 `POST /auth/token/refresh` → `204`. `syak_refresh` 쿠키는
+  **`path=/api/v1/auth/token/refresh`** 로 제한돼 그 경로에서만 전송됩니다.
+
+> 🔴 **운영 설정 확인 필요 (2026-07-10 기준)**
+> EC2 `syak.env` 가 `COOKIE_SECURE=false`, `COOKIE_SAME_SITE=none` 입니다.
+> **브라우저는 `Secure` 없는 `SameSite=None` 쿠키를 거부**하므로, 웹 클라이언트가 이 API를
+> 직접 호출하면 로그인이 되지 않습니다. 네이티브 앱은 대개 강제하지 않아 지금은 문제가 드러나지 않습니다.
+> 이미 HTTPS로 서비스 중이니 `COOKIE_SECURE=true` 로 바꾸는 것이 맞습니다.
+> (관리자 웹은 `sameSite: 'strict'` 가 코드에 고정돼 있어 영향받지 않습니다)
 
 ### 3-3. CORS
 - 관리자 웹은 API와 **동일 출처**(`admin.themuselab.kr` 에서 `/api/*` 프록시)라 CORS 없음.
@@ -98,8 +125,11 @@ curl -s "https://api.themuselab.kr/api/v1/shops?limit=1"   # 200 JSON
 
 ---
 
-## 6. 참고 — 문서 간 불일치 (정리 필요)
+## 6. 참고 — 문서 정정 이력
 
-- `docs/00-overview.md` 는 "모든 클라이언트가 쿠키 인증, Authorization 헤더 미사용" 이라고 되어 있으나,
-  실제 RN 앱은 **Bearer 토큰**을 사용합니다 (`API_DOCS.md` 기준).
-- 추후 두 문서의 인증 방식 서술을 실제 구현 기준으로 통일할 것.
+`API_DOCS.md` 가 오랫동안 "RN 앱은 `Authorization: Bearer`" 라고 안내해 왔으나 **사실이 아니었습니다.**
+구현은 처음부터 쿠키 전용이며(`auth.middleware.ts`), 로그인 응답 바디에 토큰이 담긴 적도 없습니다.
+`docs/00-overview.md` 의 "모든 클라이언트가 쿠키 인증" 서술이 맞았습니다.
+
+2026-07-10에 `API_DOCS.md` 와 이 문서를 **구현 기준으로 정정**했습니다.
+로그인 요청 바디도 `{ code }` 가 아니라 `{ access_token }` 입니다.

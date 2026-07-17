@@ -11,7 +11,7 @@
 | Auth | 카카오 / 네이버 / Apple 소셜 로그인, HttpOnly 쿠키 |
 | DB (사용자) | AWS RDS PostgreSQL — users, favorites, notifications, refresh_tokens |
 | DB (샵/슬롯) | Supabase PostgreSQL — shops, slots (읽기 전용) |
-| 실시간 | Supabase LISTEN/NOTIFY → FCM 푸시 |
+| 실시간 알림 | 스크래퍼가 새 빈자리를 `/notifications/internal/dispatch` 로 push → FCM |
 | CI/CD | GitHub Actions → Docker → EC2 |
 | 테스트 | Jest (unit, 80% 커버리지) + Supertest (E2E, Docker PostgreSQL) |
 
@@ -31,8 +31,8 @@ src/
 │   └── user/
 └── shared/
     ├── errors/               # 커스텀 에러 (AppError + ErrorCode)
-    ├── lib/                  # database.ts, slotListener.ts
-    └── middleware/           # auth, csrf, error, httpLogger
+    ├── lib/                  # database.ts
+    └── middleware/           # auth, admin-auth, error, httpLogger
 ```
 
 각 컨텍스트는 `domain → application → ports → infrastructure → interface` 5계층 헥사고날 구조를 따른다.
@@ -49,8 +49,15 @@ src/
 - `user_social_accounts` 테이블로 N:1 관계 (여러 소셜 → 한 유저)
 - `POST /api/v1/auth/link/:provider` 로 추가 연동
 
-**실시간 알림**
-- Supabase DB 트리거 → `pg_notify('slot_inserted', ...)` → `SlotListener` (Direct connection 필수, PgBouncer 불가) → FCM 푸시
+**빈자리 알림 (push 기반)**
+- 스크래퍼(`themuselab/syak`)가 매시간 슬롯 수집 시 **직전 대비 새로 생긴 오늘 빈자리**만 diff 하여
+  `POST /notifications/internal/dispatch` (X-Internal-Key) 로 백엔드에 밀어준다.
+- 서버는 해당 샵을 즐겨찾기했거나 주변 반경 안인 유저를 찾아 FCM + 알림 저장.
+- (구 Supabase LISTEN/NOTIFY 방식은 스크래퍼의 삭제→재삽입 패턴과 맞지 않아 폐기)
+
+**앱 소식 (비로그인 알림)**
+- 전역 공지/마케팅 피드(`app_news`). 로그인 무관하게 알림 탭에 노출.
+- 앱은 `POST /notifications/devices` 로 익명 디바이스(설치 단위) FCM 토큰 등록 → 관리자 발행 시 전 디바이스 푸시.
 
 **스크래퍼 분리**
 - 스크래퍼는 GitHub Actions에서만 실행 (IP 고정 없음 → rate limit 회피)
@@ -124,14 +131,15 @@ cp .env.example .env
 | 키 | 없으면 |
 |---|---|
 | `SUPABASE_URL`, `SUPABASE_SECRET_KEY` | 샵/마케팅 조회 전부 실패 |
-| `SUPABASE_DATABASE_URL` | 슬롯 실시간 알림(LISTEN/NOTIFY) 미동작 |
+| `DATABASE_URL` | 로그인·알림 등 사용자 데이터 전부 실패 (RDS) |
 | `JWT_SECRET` | 로그인 불가 |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_SESSION_TOKEN` | 관리자 로그인 불가 |
+| `INTERNAL_API_KEY` | 스크래퍼의 빈자리 알림 dispatch 거부(403) |
 | `NVIDIA_API_KEY_FLUX` | 관리자 "이미지 생성" 버튼만 503 (나머지는 정상) |
 | `REDIS_URL` | 캐시 없이 동작 (에러 아님) |
 
-> Supabase는 **반드시 port 5432 Direct connection**을 쓴다. PgBouncer(6543)는 LISTEN/NOTIFY 미지원.
 > 카카오·네이버는 클라이언트가 받은 `access_token`을 서버가 검증만 하므로 **서버 키가 필요 없다.**
+> (`SUPABASE_DATABASE_URL` 은 더 이상 쓰지 않는다 — 구 SlotListener 전용이었고 알림은 push 방식으로 교체됨)
 
 ### 2. 개발 서버 — 권장 (DB/Redis만 컨테이너, 앱은 네이티브)
 

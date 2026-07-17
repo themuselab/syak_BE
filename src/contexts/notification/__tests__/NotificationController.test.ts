@@ -28,7 +28,12 @@ function makeController() {
   const getSettings = { execute: jest.fn().mockResolvedValue(mockSettings) } as unknown as GetSettingsUseCase;
   const updateSettings = { execute: jest.fn().mockResolvedValue(mockSettings) } as unknown as UpdateSettingsUseCase;
   const dispatch = { execute: jest.fn().mockResolvedValue({ dispatched: 2 }) } as unknown as DispatchSlotNotificationsUseCase;
-  return { ctrl: new NotificationController(getNotifs, getSettings, updateSettings, dispatch), getNotifs, getSettings, updateSettings, dispatch };
+  const noop = { execute: jest.fn().mockResolvedValue(undefined) } as never;
+  const ctrl = new NotificationController(
+    getNotifs, getSettings, updateSettings, dispatch,
+    noop, noop, noop, noop, // markRead, registerDevice, listAppNews, publishAppNews
+  );
+  return { ctrl, getNotifs, getSettings, updateSettings, dispatch };
 }
 
 describe('NotificationController', () => {

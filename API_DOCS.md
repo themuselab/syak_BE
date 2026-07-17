@@ -161,14 +161,44 @@
 
 ---
 
-## 알림 `/notifications` (소비자 인증 필요)
+## 알림 `/notifications`
 
 | Method | Path | 인증 | 설명 |
 |---|---|---|---|
-| `GET` | `/notifications` | Cookie | 알림 목록 |
+| `GET` | `/notifications` | Cookie | 내 매장 알림 목록 (빈자리·주변) |
 | `GET` | `/notifications/settings` | Cookie | 알림 설정 조회 |
 | `PATCH` | `/notifications/settings` | Cookie | 알림 설정 변경 |
-| `POST` | `/notifications/internal/dispatch` | X-Internal-Key | 슬롯 오픈 FCM 발송 (GitHub Actions 전용) |
+| `POST` | `/notifications/devices` | **없음** | 익명 디바이스 등록 (앱소식 수신용 FCM 토큰) |
+| `GET` | `/notifications/app-news` | **없음** | 전역 앱 소식 목록 (로그인 무관) |
+| `POST` | `/notifications/app-news` | Cookie(admin) | 앱 소식 발행 + 전 디바이스 푸시 |
+| `DELETE` | `/notifications/app-news/:id` | Cookie(admin) | 앱 소식 삭제 |
+| `POST` | `/notifications/internal/dispatch` | X-Internal-Key | 새 빈자리 알림 발송 (스크래퍼 전용) |
+
+**빈자리/주변 알림 흐름**: 스크래퍼(`themuselab/syak`)가 매시간 슬롯을 수집하며
+**직전 대비 새로 생긴 오늘 빈자리**만 골라 `/internal/dispatch` 로 POST → 서버가 해당 샵을
+즐겨찾기했거나 주변 반경 안에 있는 유저에게 FCM 푸시 + 알림 저장.
+
+**앱 소식(공지/마케팅)**: 로그인과 무관한 전역 피드. 앱은 실행 시 `POST /devices` 로 FCM 토큰을
+등록해두고, 알림 탭에서 `GET /app-news` 를 함께 노출한다. 관리자가 `POST /app-news` 로 발행하면
+수신 켠 모든 디바이스에 푸시된다.
+
+**POST `/notifications/devices` Request:**
+```json
+{ "deviceId": "설치마다-고유-id", "fcmToken": "…", "platform": "ios", "appNewsEnabled": true }
+```
+`deviceId`/`fcmToken` 필수. 로그인 상태로 호출하면 유저와 연결된다(선택). → `204`
+
+**POST `/notifications/app-news` Request (admin):**
+```json
+{ "title": "제목", "body": "내용", "link": "https://…", "imageUrl": "https://…" }
+```
+→ `201 { "news": { "id", "title", "body", "link", "imageUrl", "publishedAt" }, "pushed": 1234 }`
+
+**POST `/notifications/internal/dispatch` Request:**
+```json
+{ "events": [ { "shopId": "123", "shopName": "샵", "shopLat": 37.5, "shopLng": 127.0, "slotDate": "2026-07-18", "slotTime": "14:00" } ] }
+```
+→ `{ "dispatched": N }` (N = 저장된 알림 수. 오늘 날짜 슬롯만 처리)
 
 ---
 

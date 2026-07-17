@@ -99,6 +99,66 @@ Set-Cookie: syak_access=...; HttpOnly; Secure; SameSite=None      # 앱 (COOKIE_
 
 ---
 
+## 3-4. 샵 예약 URL(`bookingUrl`) — 라벨은 URL로 판별
+
+`GET /shops/:shopId` 의 `bookingUrl` 은 샵의 `detail.reservationRoutes` **배열 중 첫 번째 항목의 값**이다.
+서버는 예약 수단을 구분해 보내지 않는다 — **바 문자열 하나**만 준다. 따라서 "네이버 예약 / 인스타 예약"
+같은 라벨은 **FE가 URL 도메인으로 판별**해야 한다. (FE는 이미 이렇게 처리 중)
+
+실제 라우트 타입과 판별 기준:
+
+| 타입 | 예시 값 | 도메인/형태 |
+|---|---|---|
+| `naver` | `https://booking.naver.com/...` / `talk.naver.com/...` | `naver.com` |
+| `instagram` | `https://www.instagram.com/xxx` | `instagram.com` |
+| `kakao` | `https://pf.kakao.com/_xxx` | `pf.kakao.com` |
+| `talktalk` | `http://talk.naver.com/xxx` | `talk.naver.com` |
+| `phone` | `0507-1234-5678` | `http` 없음 = 전화번호 |
+
+- 표본 분포(500곳): phone 423 · instagram 183 · talktalk 108 · naver 45 · kakao 20.
+- **`naver` 예약이 있는 샵은 그게 항상 첫 번째**라 `bookingUrl` 이 네이버로 온다.
+  반대로 네이버가 없는 샵은 phone/instagram 등이 `bookingUrl` 로 온다 →
+  이때 "네이버로 예약" 라벨을 붙이면 안 된다. (QA #32 원인)
+- `http://` 로 시작하지 않으면 전화번호다. `tel:` 로 처리.
+
+> 여러 예약 수단을 **모두** 버튼으로 노출하고 싶으면 서버가 `reservationRoutes`
+> 전체(`{type, label, value}[]`)를 내보내도록 확장할 수 있다. 지금은 첫 항목만 `bookingUrl` 로 노출한다.
+> 필요하면 백엔드에 요청.
+
+---
+
+## 3-5. 알림 — 매장 알림 vs 앱 소식 (2026-07 개편)
+
+알림은 **두 갈래**다. 앱의 알림 탭은 이 둘을 합쳐 보여준다.
+
+| 종류 | 로그인 | 소스 | 설명 |
+|---|---|---|---|
+| 매장 알림 (빈자리·주변) | 필요 | `GET /notifications` | 즐겨찾기/주변 샵에 빈자리가 새로 생기면 FCM + 목록 |
+| 앱 소식 (공지·마케팅) | **불필요** | `GET /notifications/app-news` | 전역 피드. 로그아웃 상태에서도 노출 |
+
+**FE가 해야 할 것:**
+
+1. **앱 실행 시 디바이스 등록** (로그인 여부 무관):
+   ```
+   POST /notifications/devices
+   { deviceId, fcmToken, platform, appNewsEnabled }
+   ```
+   - `deviceId`: 설치마다 고유한 ID(예: `react-native-device-info` 의 `getUniqueId`, 또는 최초 실행 시 생성해 저장한 UUID). FCM 토큰이 갱신되면 다시 호출.
+   - 이게 있어야 **비로그인 유저도 앱 소식 푸시**를 받는다. (QA 비로그인 #4)
+
+2. **알림 탭 구성**: 로그인 상태면 `GET /notifications`(매장) + `GET /notifications/app-news`(앱소식)를
+   병합해 시간순 정렬. **로그아웃 상태면 앱 소식만** 노출. (QA 비로그인 #5)
+   - 앱 소식 읽음 상태는 서버가 관리하지 않는다 → **로컬(기기)에서 관리**.
+
+3. **매장 알림 수신 설정**은 기존대로 로그인 유저의 `PATCH /notifications/settings`
+   (`favoriteEnabled`/`nearEnabled` + `fcmToken`). 앱 소식 on/off 는 `POST /devices` 의 `appNewsEnabled`.
+
+> **빈자리 알림 발송 방식이 바뀌었다.** 예전엔 Supabase 트리거+상시 LISTEN 이었으나,
+> 스크래퍼가 **직전 대비 새로 생긴 오늘 빈자리만** 백엔드로 밀어주는 방식으로 교체됐다.
+> FE 변경사항은 없다(여전히 FCM 수신 + `GET /notifications`). 참고만.
+
+---
+
 ## 4. 마이그레이션 체크리스트 (RN 앱)
 
 - [ ] 앱 설정/환경변수의 `API_BASE_URL` 을 `https://api.themuselab.kr/api/v1` 로 교체

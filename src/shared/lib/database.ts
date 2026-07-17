@@ -4,7 +4,6 @@ import ws from 'ws';
 import { logger } from '../logger';
 
 let rdsPool: Pool | null = null;
-let supabasePool: Pool | null = null;
 let sbClient: SupabaseClient | null = null;
 
 function makePool(url: string, name: string): Pool {
@@ -24,12 +23,6 @@ export function getRdsPool(): Pool {
   return rdsPool;
 }
 
-/** Supabase — 샵/슬롯 읽기 전용 + SlotListener LISTEN/NOTIFY */
-export function getSupabasePool(): Pool {
-  if (!supabasePool) supabasePool = makePool(process.env.SUPABASE_DATABASE_URL!, 'supabase');
-  return supabasePool;
-}
-
 /** Supabase REST API 클라이언트 — 샵/슬롯 읽기 + 어드민 샵 CRUD */
 export function getSupabaseClient(): SupabaseClient {
   if (!sbClient) {
@@ -46,6 +39,5 @@ export function getSupabaseClient(): SupabaseClient {
 export async function closePool(): Promise<void> {
   await Promise.all([
     rdsPool?.end(),
-    supabasePool?.end(),
   ]);
 }

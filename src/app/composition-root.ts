@@ -1,5 +1,4 @@
-import { getRdsPool, getSupabasePool, getSupabaseClient } from '../shared/lib/database';
-import { SlotListener } from '../shared/lib/slotListener';
+import { getRdsPool, getSupabaseClient } from '../shared/lib/database';
 
 // Admin
 import { AdminController } from '../contexts/admin/interface/AdminController';
@@ -68,12 +67,16 @@ import { FavoriteController } from '../contexts/favorite/interface/FavoriteContr
 
 // Notification
 import { PgNotificationRepository } from '../contexts/notification/infrastructure/PgNotificationRepository';
+import { PgAppNewsRepository } from '../contexts/notification/infrastructure/PgAppNewsRepository';
 import { FcmPushService } from '../contexts/notification/infrastructure/FcmPushService';
 import { GetNotificationsUseCase } from '../contexts/notification/application/GetNotificationsUseCase';
 import { GetSettingsUseCase } from '../contexts/notification/application/GetSettingsUseCase';
 import { UpdateSettingsUseCase } from '../contexts/notification/application/UpdateSettingsUseCase';
 import { DispatchSlotNotificationsUseCase } from '../contexts/notification/application/DispatchSlotNotificationsUseCase';
 import { MarkReadUseCase } from '../contexts/notification/application/MarkReadUseCase';
+import { RegisterDeviceUseCase } from '../contexts/notification/application/RegisterDeviceUseCase';
+import { ListAppNewsUseCase } from '../contexts/notification/application/ListAppNewsUseCase';
+import { PublishAppNewsUseCase } from '../contexts/notification/application/PublishAppNewsUseCase';
 import { NotificationController } from '../contexts/notification/interface/NotificationController';
 
 // User
@@ -99,16 +102,13 @@ export interface Controllers {
 
 export interface AppDependencies {
   controllers: Controllers;
-  slotListener: SlotListener;
 }
 
 export function buildDependencies(): AppDependencies {
   // ── DB 연결 ─────────────────────────────────────────────────
   // rds      : 사용자 데이터 (users, favorites, notifications, ...)
   // sbClient : 샵/슬롯 읽기 + 어드민 CRUD (Supabase REST API — 무료)
-  // supabase : LISTEN/NOTIFY 전용 Pool (SlotListener만 사용)
   const rds = getRdsPool();
-  const supabase = getSupabasePool();        // SlotListener 전용
   const sbClient = getSupabaseClient();      // 샵/슬롯/어드민
 
   // ── Redis 캐시 (샵 목록/상세 캐싱) ───────────────────────────
@@ -164,6 +164,7 @@ export function buildDependencies(): AppDependencies {
 
   // ── Notification (RDS) ────────────────────────────────────
   const notifRepo = new PgNotificationRepository(rds);
+  const appNewsRepo = new PgAppNewsRepository(rds);
   const pushService = new FcmPushService();
   const dispatchUseCase = new DispatchSlotNotificationsUseCase(notifRepo, pushService);
   const notificationController = new NotificationController(
@@ -172,6 +173,9 @@ export function buildDependencies(): AppDependencies {
     new UpdateSettingsUseCase(notifRepo),
     dispatchUseCase,
     new MarkReadUseCase(notifRepo),
+    new RegisterDeviceUseCase(appNewsRepo),
+    new ListAppNewsUseCase(appNewsRepo),
+    new PublishAppNewsUseCase(appNewsRepo, pushService),
   );
 
   // ── User (RDS) ────────────────────────────────────────────
@@ -208,8 +212,9 @@ export function buildDependencies(): AppDependencies {
   const adminController = new AdminController(rds, sbClient);
   const inquiryController = new InquiryController(rds);
 
-  // ── Real-time (Supabase LISTEN/NOTIFY) ───────────────────
-  const slotListener = new SlotListener(dispatchUseCase);
+  // 빈자리 알림은 스크래퍼(themuselab/syak)가 새 슬롯만 골라
+  // POST /notifications/internal/dispatch 로 밀어준다.
+  // (과거 Supabase LISTEN/NOTIFY 방식은 스크래퍼의 삭제→재삽입 패턴과 맞지 않아 폐기)
 
   const controllers: Controllers = {
     auth: authController,
@@ -225,7 +230,7 @@ export function buildDependencies(): AppDependencies {
     admin: adminController,
     inquiry: inquiryController,
   };
-  return { controllers, slotListener };
+  return { controllers };
 }
 
 export function buildControllers(): Controllers {

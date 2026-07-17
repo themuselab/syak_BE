@@ -24,7 +24,9 @@ function makePush(): IPushService {
   };
 }
 
-const event = { shopId: 'shop-1', shopName: '태닝나우', shopLat: 37.5, shopLng: 127.0, slotDate: '2025-01-01', slotTime: '14:00' };
+// dispatch는 todayOnly=true 로 '오늘' 슬롯만 처리하므로 날짜를 오늘로 고정
+const TODAY = new Date().toISOString().slice(0, 10);
+const event = { shopId: 'shop-1', shopName: '태닝나우', shopLat: 37.5, shopLng: 127.0, slotDate: TODAY, slotTime: '14:00' };
 
 describe('DispatchSlotNotificationsUseCase', () => {
   it('즐겨찾기 대상자에게 푸시를 발송한다', async () => {
@@ -52,7 +54,8 @@ describe('DispatchSlotNotificationsUseCase', () => {
     const useCase = new DispatchSlotNotificationsUseCase(makeRepo([favTarget, nearTarget]), push);
     const result = await useCase.execute([event]);
     expect(push.send).toHaveBeenCalledTimes(2);
-    expect(result.dispatched).toBe(1);
+    // dispatched = 저장된 알림 수. push 실패는 로깅만 하고 알림은 저장되므로 2가 맞다.
+    expect(result.dispatched).toBe(2);
   });
 
   it('이벤트가 없으면 dispatched=0을 반환한다', async () => {

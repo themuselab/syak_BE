@@ -30,7 +30,7 @@ function applyMiddleware(app: Express): void {
   app.use(httpLogger);
 }
 
-// createApp은 테스트 전용 — SlotListener 시작 없이 Express 앱만 반환
+// createApp은 테스트 전용 — 서버 리슨 없이 Express 앱만 반환
 export function createApp(): Express {
   const app = express();
   applyMiddleware(app);
@@ -43,7 +43,7 @@ export function createApp(): Express {
 
 if (require.main === module) {
   const port = parseInt(process.env.PORT ?? '3000', 10);
-  const { controllers, slotListener } = buildDependencies();
+  const { controllers } = buildDependencies();
 
   const app = express();
   applyMiddleware(app);
@@ -51,14 +51,12 @@ if (require.main === module) {
   app.use('/api/v1', buildRouter(controllers));
   app.use(errorMiddleware);
 
-  const server = app.listen(port, async () => {
+  const server = app.listen(port, () => {
     logger.info(`Syak backend running on port ${port} [${process.env.NODE_ENV ?? 'development'}]`);
-    await slotListener.start();
   });
 
   const shutdown = async () => {
     logger.info('Shutting down...');
-    await slotListener.stop();
     server.close(async () => {
       await closePool();
       process.exit(0);

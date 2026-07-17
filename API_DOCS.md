@@ -123,7 +123,12 @@
 {
   "...목록 필드 전부...",
   "bizId": "네이버_플레이스_ID",
-  "bookingUrl": "https://예약URL",
+  "bookingUrl": "https://m.booking.naver.com/...",
+  "bookingType": "naver",
+  "reservationRoutes": [
+    { "type": "naver", "label": "네이버로 예약", "value": "https://m.booking.naver.com/..." },
+    { "type": "instagram", "label": "인스타로 문의", "value": "https://www.instagram.com/..." }
+  ],
   "phone": "02-1234-5678",
   "roadAddress": "경기 하남시 미사강변대로 80",
   "menus": [

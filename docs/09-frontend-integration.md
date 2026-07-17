@@ -99,31 +99,36 @@ Set-Cookie: syak_access=...; HttpOnly; Secure; SameSite=None      # 앱 (COOKIE_
 
 ---
 
-## 3-4. 샵 예약 URL(`bookingUrl`) — 라벨은 URL로 판별
+## 3-4. 샵 예약 수단 — 서버가 type을 정확히 준다 (2026-07 개편)
 
-`GET /shops/:shopId` 의 `bookingUrl` 은 샵의 `detail.reservationRoutes` **배열 중 첫 번째 항목의 값**이다.
-서버는 예약 수단을 구분해 보내지 않는다 — **바 문자열 하나**만 준다. 따라서 "네이버 예약 / 인스타 예약"
-같은 라벨은 **FE가 URL 도메인으로 판별**해야 한다. (FE는 이미 이렇게 처리 중)
+`GET /shops/:shopId` 응답에 **`reservationRoutes` 배열과 `bookingType`** 이 추가됐다.
+**더 이상 URL을 추측하지 말고 `type`으로 판별**하라. (QA #32)
 
-실제 라우트 타입과 판별 기준:
+```jsonc
+{
+  "bookingUrl":  "https://m.booking.naver.com/...",  // 대표 링크(하위호환)
+  "bookingType": "naver",                            // 대표 링크의 수단
+  "reservationRoutes": [
+    { "type": "naver",     "label": "네이버로 예약", "value": "https://m.booking.naver.com/..." },
+    { "type": "talktalk",  "label": "톡톡으로 문의", "value": "http://talk.naver.com/..." },
+    { "type": "instagram", "label": "인스타로 문의", "value": "https://www.instagram.com/..." }
+  ]
+}
+```
 
-| 타입 | 예시 값 | 도메인/형태 |
+| type | 의미 | 앱 처리 |
 |---|---|---|
-| `naver` | `https://booking.naver.com/...` / `talk.naver.com/...` | `naver.com` |
-| `instagram` | `https://www.instagram.com/xxx` | `instagram.com` |
-| `kakao` | `https://pf.kakao.com/_xxx` | `pf.kakao.com` |
-| `talktalk` | `http://talk.naver.com/xxx` | `talk.naver.com` |
-| `phone` | `0507-1234-5678` | `http` 없음 = 전화번호 |
+| `naver` | **네이버 온라인 예약** (`m.booking.naver.com`) — 유일한 진짜 "예약" | "네이버 예약" 버튼 |
+| `talktalk` | 네이버 톡톡 **문의** (`talk.naver.com`) | "톡톡 문의" |
+| `instagram` | 인스타 문의 | "인스타 문의" |
+| `kakao` | 카카오 채널 (`*.kakao.com`) | "카카오 문의/예약" |
+| `phone` | 전화번호 (URL 아님) | `tel:` |
 
-- 표본 분포(500곳): phone 423 · instagram 183 · talktalk 108 · naver 45 · kakao 20.
-- **`naver` 예약이 있는 샵은 그게 항상 첫 번째**라 `bookingUrl` 이 네이버로 온다.
-  반대로 네이버가 없는 샵은 phone/instagram 등이 `bookingUrl` 로 온다 →
-  이때 "네이버로 예약" 라벨을 붙이면 안 된다. (QA #32 원인)
-- `http://` 로 시작하지 않으면 전화번호다. `tel:` 로 처리.
-
-> 여러 예약 수단을 **모두** 버튼으로 노출하고 싶으면 서버가 `reservationRoutes`
-> 전체(`{type, label, value}[]`)를 내보내도록 확장할 수 있다. 지금은 첫 항목만 `bookingUrl` 로 노출한다.
-> 필요하면 백엔드에 요청.
+- **`bookingType`** = 대표 링크의 종류다. `naver`가 있으면 그걸 최우선으로 잡는다(=온라인 예약 가능).
+  `naver`가 없으면 문의 전용 샵 → `bookingType`이 `talktalk`/`instagram`/`phone` 등이 된다.
+- **"네이버로 예약" 라벨은 `bookingType === "naver"` 또는 배열에 `naver`가 있을 때만** 붙여라.
+- 여러 수단을 모두 버튼으로 노출하려면 `reservationRoutes` 를 그대로 렌더링하면 된다(각 항목에 `label` 포함).
+- Supabase 데이터 감사 결과 **type↔URL이 100% 정확**하고 재분류 불필요함을 확인했다(883곳 표본).
 
 ---
 

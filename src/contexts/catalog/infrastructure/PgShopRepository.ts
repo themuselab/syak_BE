@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { IShopRepository, ShopListResult } from '../ports/IShopRepository';
-import { Shop, ShopSummary, ShopMenu, ShopReview, Category, PriceTier } from '../domain/Shop';
+import { Shop, ShopSummary, ShopMenu, ShopReview, Category, PriceTier, ReservationRoute } from '../domain/Shop';
 import { ShopFilter, SortOrder } from '../domain/ShopFilter';
 import { ICacheService } from '../../../shared/cache/ICacheService';
 
@@ -155,8 +155,15 @@ export class PgShopRepository implements IShopRepository {
 
   private mapFull(row: Record<string, unknown>): Shop {
     const detail  = row.detail as Record<string, unknown> | null;
-    const routes  = detail?.reservationRoutes as Array<{ value: string }> | null;
+    const rawRoutes = (detail?.reservationRoutes as Array<{ type?: string; label?: string; value?: string }> | null) ?? [];
     const imgs    = detail?.images as Record<string, unknown> | null;
+
+    // 예약/문의 수단 — type이 정확히 저장돼 있다(naver=실제예약, talktalk/instagram/kakao=문의, phone=전화)
+    const reservationRoutes = rawRoutes
+      .filter((r) => r?.value)
+      .map((r) => ({ type: (r.type ?? 'phone') as ReservationRoute['type'], label: r.label ?? '', value: r.value as string }));
+    // 대표 예약 링크: 진짜 예약(naver)을 최우선, 없으면 첫 항목
+    const primary = reservationRoutes.find((r) => r.type === 'naver') ?? reservationRoutes[0] ?? null;
 
     // 갤러리 우선, 없으면 리뷰 이미지, 없으면 대표 이미지 1장
     const gallery = (imgs?.gallery as string[] | null) ?? [];
@@ -171,7 +178,9 @@ export class PgShopRepository implements IShopRepository {
       ...this.mapSummary(row),
       photos,
       bizId:       row.biz_id as string | null,
-      bookingUrl:  routes?.[0]?.value ?? null,
+      reservationRoutes,
+      bookingUrl:  primary?.value ?? null,
+      bookingType: primary?.type ?? null,
       phone:       (detail?.phone as string) ?? null,
       roadAddress: (detail?.roadAddress as string) ?? null,
       menus: rawMenus.map(m => ({

@@ -8,6 +8,7 @@ import {
   generateMarketingImages as runImageGeneration, ImageGenConfigError,
   MARKETING_BUCKET, MarketingImage,
 } from '../infrastructure/MarketingImageService';
+import { replyToThread, publishThread, ThreadsConfigError } from '../infrastructure/ThreadsPublishService';
 
 function toCamel(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -851,6 +852,45 @@ export class AdminController {
   };
 
   // ── 시안 이미지 삭제: Storage 객체 + 스냅샷 data.images 동시 제거 ──
+  // ── 쓰레드에 직접 답글 등록 ──────────────────────────────────
+  threadsReply = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { replyToId, text } = req.body ?? {};
+      if (!replyToId || !text?.trim()) {
+        res.status(400).json({ code: 'VALIDATION_ERROR', message: 'replyToId와 text가 필요합니다' });
+        return;
+      }
+      const result = await replyToThread(this.sbClient, String(replyToId), String(text).trim());
+      res.status(201).json(result);
+    } catch (err) {
+      if (err instanceof ThreadsConfigError) {
+        res.status(503).json({ code: 'THREADS_UNAVAILABLE', message: err.message });
+        return;
+      }
+      // 쓰레드 API 거부(권한/레이트리밋 등)는 원인 메시지를 그대로 전달
+      res.status(502).json({ code: 'THREADS_ERROR', message: (err as Error).message });
+    }
+  };
+
+  // ── 쓰레드에 새 글 발행 ──────────────────────────────────────
+  threadsPost = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { text } = req.body ?? {};
+      if (!text?.trim()) {
+        res.status(400).json({ code: 'VALIDATION_ERROR', message: 'text가 필요합니다' });
+        return;
+      }
+      const result = await publishThread(this.sbClient, String(text).trim());
+      res.status(201).json(result);
+    } catch (err) {
+      if (err instanceof ThreadsConfigError) {
+        res.status(503).json({ code: 'THREADS_UNAVAILABLE', message: err.message });
+        return;
+      }
+      res.status(502).json({ code: 'THREADS_ERROR', message: (err as Error).message });
+    }
+  };
+
   deleteMarketingImage = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const imageId = req.params.imageId;

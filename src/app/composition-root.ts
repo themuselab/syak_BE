@@ -115,9 +115,11 @@ export function buildDependencies(): AppDependencies {
   // REDIS_URL 있으면 Redis, 없으면 프로세스 내 인메모리(LRU+TTL)로 fallback.
   // 예전엔 NullCacheService(no-op)라 운영(Redis 미설정)에서 소비자 카탈로그가
   // 전혀 캐시되지 않고 매번 Supabase로 직행했다.
+  // 상한 300: 운영 EC2가 912MB 소형이라 보수적으로 잡음(리스트 엔트리가 커질 수 있음).
+  // 핫셋(인기 샵 상세 + 흔한 목록/지도 뷰포트)엔 충분. 부족하면 Redis/큰 인스턴스로.
   const cache: ICacheService = process.env.REDIS_URL
     ? new RedisCacheService(process.env.REDIS_URL)
-    : new InMemoryCacheService();
+    : new InMemoryCacheService(300);
 
   // ── Auth (RDS) ────────────────────────────────────────────
   const userRepo = new PgUserRepository(rds);

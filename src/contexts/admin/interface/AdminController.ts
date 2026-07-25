@@ -69,6 +69,20 @@ export class AdminController {
     this.sse = initAdminSSE(rds, sbClient);
   }
 
+  // ── 통계 인메모리 캐시 ────────────────────────────────────────
+  // 통계는 관리자만 보고 과거 집계는 거의 안 바뀐다. 매번 Supabase를 1000행씩
+  // 여러 번 왕복하는 대신 짧게 캐시 → 반복 조회 시 왕복 0 (무료티어 지연 회피).
+  // (운영에 Redis가 없어 인메모리 사용. shopFilterCache와 동일 방식. 서버 재시작 시 소멸)
+  private static readonly STATS_TTL = 120_000; // 2분
+  private statsCache = new Map<string, { at: number; data: unknown }>();
+  private async cachedStats<T>(key: string, compute: () => Promise<T>): Promise<T> {
+    const hit = this.statsCache.get(key);
+    if (hit && Date.now() - hit.at < AdminController.STATS_TTL) return hit.data as T;
+    const data = await compute();
+    this.statsCache.set(key, { at: Date.now(), data });
+    return data;
+  }
+
   // ── SSE 스트림 ───────────────────────────────────────────────
   stream = (req: Request, res: Response): void => {
     this.sse.addClient(res);
@@ -475,40 +489,36 @@ export class AdminController {
     try {
       const period = ['30d','90d'].includes(req.query.period as string)
         ? parseInt(req.query.period as string, 10) : 7;
-      const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
+      const result = await this.cachedStats(`shopViews:${period}`, async () => {
+        const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
+        const allEvents = await fetchAllRows<{ shop_id: string | null; created_at: string }>(
+          (from, to) => this.sbClient.from('events').select('shop_id, created_at')
+            .eq('event', 'detail_view').not('shop_id', 'is', null).gte('created_at', since).range(from, to),
+        );
 
-      const allEvents = await fetchAllRows<{ shop_id: string | null; created_at: string }>(
-        (from, to) => this.sbClient.from('events').select('shop_id, created_at')
-          .eq('event', 'detail_view').not('shop_id', 'is', null).gte('created_at', since).range(from, to),
-      );
+        const shopCounts = new Map<string, number>();
+        const dailyCounts = new Map<string, number>();
+        for (const e of allEvents) {
+          if (e.shop_id) shopCounts.set(e.shop_id, (shopCounts.get(e.shop_id) ?? 0) + 1);
+          const date = e.created_at.slice(0, 10);
+          dailyCounts.set(date, (dailyCounts.get(date) ?? 0) + 1);
+        }
 
-      const shopCounts = new Map<string, number>();
-      const dailyCounts = new Map<string, number>();
-      for (const e of allEvents) {
-        if (e.shop_id) shopCounts.set(e.shop_id, (shopCounts.get(e.shop_id) ?? 0) + 1);
-        const date = e.created_at.slice(0, 10);
-        dailyCounts.set(date, (dailyCounts.get(date) ?? 0) + 1);
-      }
+        const sorted = [...shopCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
+        const shopMap = await fetchShopMap(this.sbClient, sorted.map(([id]) => id), 'id, name, gu');
+        const stats = sorted.map(([shopId, views]) => ({
+          shopId,
+          shopName: (shopMap.get(shopId)?.name as string) ?? null,
+          gu:       (shopMap.get(shopId)?.gu as string) ?? null,
+          views:    String(views),
+        }));
+        const daily = [...dailyCounts.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([date, views]) => ({ date, views: String(views) }));
 
-      const sorted = [...shopCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
-      const shopMap = await fetchShopMap(this.sbClient, sorted.map(([id]) => id), 'id, name, gu');
-      const stats = sorted.map(([shopId, views]) => ({
-        shopId,
-        shopName: (shopMap.get(shopId)?.name as string) ?? null,
-        gu:       (shopMap.get(shopId)?.gu as string) ?? null,
-        views:    String(views),
-      }));
-      const daily = [...dailyCounts.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, views]) => ({ date, views: String(views) }));
-
-      res.json({
-        period:      `${period}d`,
-        total:       allEvents.length,
-        uniqueShops: shopCounts.size,
-        daily,
-        stats,
+        return { period: `${period}d`, total: allEvents.length, uniqueShops: shopCounts.size, daily, stats };
       });
+      res.json(result);
     } catch (err) { next(err); }
   };
 
@@ -517,34 +527,36 @@ export class AdminController {
     try {
       const period = ['30d','90d'].includes(req.query.period as string)
         ? parseInt(req.query.period as string, 10) : 7;
-      const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
+      const result = await this.cachedStats(`visitors:${period}`, async () => {
+        const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
+        const allSessions = await fetchAllRows<{ created_at: string; platform: string | null }>(
+          (from, to) => this.sbClient.from('events').select('created_at, platform')
+            .eq('event', 'session_start').gte('created_at', since).range(from, to),
+        );
 
-      const allSessions = await fetchAllRows<{ created_at: string; platform: string | null }>(
-        (from, to) => this.sbClient.from('events').select('created_at, platform')
-          .eq('event', 'session_start').gte('created_at', since).range(from, to),
-      );
-
-      const webMap  = new Map<string, number>();
-      const tossMap = new Map<string, number>();
-      for (const s of allSessions) {
-        const date = s.created_at.slice(0, 10);
-        if ((s.platform || 'web') === 'web') {
-          webMap.set(date, (webMap.get(date) ?? 0) + 1);
-        } else {
-          tossMap.set(date, (tossMap.get(date) ?? 0) + 1);
+        const webMap  = new Map<string, number>();
+        const tossMap = new Map<string, number>();
+        for (const s of allSessions) {
+          const date = s.created_at.slice(0, 10);
+          if ((s.platform || 'web') === 'web') {
+            webMap.set(date, (webMap.get(date) ?? 0) + 1);
+          } else {
+            tossMap.set(date, (tossMap.get(date) ?? 0) + 1);
+          }
         }
-      }
 
-      const toArr = (m: Map<string, number>) =>
-        [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, count]) => ({ date, count }));
+        const toArr = (m: Map<string, number>) =>
+          [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, count]) => ({ date, count }));
 
-      res.json({
-        period:    `${period}d`,
-        totalWeb:  [...webMap.values()].reduce((a, b) => a + b, 0),
-        totalToss: [...tossMap.values()].reduce((a, b) => a + b, 0),
-        web:       toArr(webMap),
-        toss:      toArr(tossMap),
+        return {
+          period:    `${period}d`,
+          totalWeb:  [...webMap.values()].reduce((a, b) => a + b, 0),
+          totalToss: [...tossMap.values()].reduce((a, b) => a + b, 0),
+          web:       toArr(webMap),
+          toss:      toArr(tossMap),
+        };
       });
+      res.json(result);
     } catch (err) { next(err); }
   };
 
@@ -553,23 +565,25 @@ export class AdminController {
     try {
       const period = ['30d','90d'].includes(req.query.period as string)
         ? parseInt(req.query.period as string, 10) : 7;
-      const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
+      const result = await this.cachedStats(`cancelReq:${period}`, async () => {
+        const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
+        const leads = await fetchAllRows<{ created_at: string }>(
+          (from, to) => this.sbClient.from('leads').select('created_at')
+            .eq('kind', 'missed_seat_alert').gte('created_at', since).range(from, to),
+        );
 
-      const leads = await fetchAllRows<{ created_at: string }>(
-        (from, to) => this.sbClient.from('leads').select('created_at')
-          .eq('kind', 'missed_seat_alert').gte('created_at', since).range(from, to),
-      );
+        const dailyCounts = new Map<string, number>();
+        for (const l of leads) {
+          const date = (l.created_at as string).slice(0, 10);
+          dailyCounts.set(date, (dailyCounts.get(date) ?? 0) + 1);
+        }
+        const daily = [...dailyCounts.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([date, count]) => ({ date, count: String(count) }));
 
-      const dailyCounts = new Map<string, number>();
-      for (const l of leads) {
-        const date = (l.created_at as string).slice(0, 10);
-        dailyCounts.set(date, (dailyCounts.get(date) ?? 0) + 1);
-      }
-      const daily = [...dailyCounts.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, count]) => ({ date, count: String(count) }));
-
-      res.json({ period: `${period}d`, daily, total: leads.length });
+        return { period: `${period}d`, daily, total: leads.length };
+      });
+      res.json(result);
     } catch (err) { next(err); }
   };
 
@@ -600,26 +614,28 @@ export class AdminController {
     try {
       const period = ['30d','90d'].includes(req.query.period as string)
         ? parseInt(req.query.period as string, 10) : 7;
-      const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
+      const result = await this.cachedStats(`reserveClicks:${period}`, async () => {
+        const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
+        const allEvents = await fetchAllRows<{ shop_id: string | null }>(
+          (from, to) => this.sbClient.from('events').select('shop_id')
+            .eq('event', 'reserve_click').not('shop_id', 'is', null).gte('created_at', since).range(from, to),
+        );
 
-      const allEvents = await fetchAllRows<{ shop_id: string | null }>(
-        (from, to) => this.sbClient.from('events').select('shop_id')
-          .eq('event', 'reserve_click').not('shop_id', 'is', null).gte('created_at', since).range(from, to),
-      );
-
-      const shopCounts = new Map<string, number>();
-      for (const e of allEvents) {
-        if (e.shop_id) shopCounts.set(e.shop_id, (shopCounts.get(e.shop_id) ?? 0) + 1);
-      }
-      const sorted = [...shopCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
-      const shopMap = await fetchShopMap(this.sbClient, sorted.map(([id]) => id), 'id, name, gu');
-      const stats = sorted.map(([shopId, clicks]) => ({
-        shopId,
-        shopName: (shopMap.get(shopId)?.name as string) ?? null,
-        gu:       (shopMap.get(shopId)?.gu as string) ?? null,
-        clicks:   String(clicks),
-      }));
-      res.json({ period: `${period}d`, stats });
+        const shopCounts = new Map<string, number>();
+        for (const e of allEvents) {
+          if (e.shop_id) shopCounts.set(e.shop_id, (shopCounts.get(e.shop_id) ?? 0) + 1);
+        }
+        const sorted = [...shopCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
+        const shopMap = await fetchShopMap(this.sbClient, sorted.map(([id]) => id), 'id, name, gu');
+        const stats = sorted.map(([shopId, clicks]) => ({
+          shopId,
+          shopName: (shopMap.get(shopId)?.name as string) ?? null,
+          gu:       (shopMap.get(shopId)?.gu as string) ?? null,
+          clicks:   String(clicks),
+        }));
+        return { period: `${period}d`, stats };
+      });
+      res.json(result);
     } catch (err) { next(err); }
   };
 
@@ -894,6 +910,7 @@ export class AdminController {
   // ── 트렌드 (일별 신규 가입·코드) — 30일 ─────────────────────
   getTrends = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
+      const result = await this.cachedStats('trends:30d', async () => {
       const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
       const [
@@ -940,12 +957,14 @@ export class AdminController {
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([date, count]) => ({ date, count }));
 
-      res.json({
+      return {
         users:   fmtRows(userRows),
         owners:  fmtRows(ownerRows),
         codes:   fmtRows(codeRows),
         views:   viewDaily,
+      };
       });
+      res.json(result);
     } catch (err) { next(err); }
   };
 }

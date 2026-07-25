@@ -64,7 +64,8 @@ export class AdminSSEService {
     catch (err) { logger.warn({ err }, 'admin SSE pushNow failed'); }
   }
 
-  private async buildSummary(): Promise<AdminSummary> {
+  /** 대시보드 요약 계산 — SSE 폴링과 GET /admin/dashboard(fallback)가 공유 */
+  async buildSummary(): Promise<AdminSummary> {
     const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
     const [

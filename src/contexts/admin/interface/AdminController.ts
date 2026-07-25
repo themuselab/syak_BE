@@ -25,6 +25,28 @@ interface MarketingSnapshotData {
   images?:    MarketingImage[];
 }
 
+/**
+ * Supabase PostgREST 기본 1000행 한도를 넘겨 전량 수집한다.
+ * buildPage(from,to)는 range()까지 적용된 쿼리를 만들어 반환한다.
+ * (통계 핸들러들이 이 페이지네이션을 복붙하다 1000행 누락 버그를 반복해 헬퍼로 통합)
+ */
+async function fetchAllRows<T>(
+  buildPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+  batch = 1000,
+): Promise<T[]> {
+  const all: T[] = [];
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await buildPage(offset, offset + batch - 1);
+    if (error) throw error;
+    const rows = data ?? [];
+    all.push(...rows);
+    if (rows.length < batch) break;
+    offset += batch;
+  }
+  return all;
+}
+
 /** 여러 shopId에 대한 Supabase 샵 정보를 한 번에 가져오는 헬퍼 */
 async function fetchShopMap(
   sb: SupabaseClient,
@@ -228,14 +250,30 @@ export class AdminController {
   // ── 파트너샵 목록 (Supabase is_partner=true 기준) ────────────
   listPartnerShops = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { data: shops, error } = await this.sbClient
-        .from('shops')
-        .select('id, name, gu, category, today_open, representative_image, partner_synced_at, pilot_coupon, detail->>phone')
-        .eq('is_partner', true)
-        .order('partner_synced_at', { ascending: false });
-      if (error) throw error;
+      // 1단계: 목록은 detail 없이 (detail->>phone을 대량 정렬과 함께 뽑으면 JSONB detoast로
+      //        statement timeout 위험 — listAllShops와 동일하게 2단계로 회피). 1000행 한도도 넘겨 수집.
+      type Row = { id: string; name: string; gu: string | null; category: string | null;
+        today_open: boolean | null; representative_image: string | null;
+        partner_synced_at: string | null; pilot_coupon: string | null };
+      const shops = await fetchAllRows<Row>(
+        (from, to) => this.sbClient.from('shops')
+          .select('id, name, gu, category, today_open, representative_image, partner_synced_at, pilot_coupon')
+          .eq('is_partner', true)
+          .order('partner_synced_at', { ascending: false })
+          .range(from, to),
+      );
 
-      const result = (shops ?? []).map(s => ({
+      // 2단계: phone만 id로 재조회 (detoast를 파트너샵 소수 집합으로 한정)
+      const phoneMap = new Map<string, string | null>();
+      const ids = shops.map(s => s.id);
+      if (ids.length) {
+        const { data: det, error: detErr } = await this.sbClient
+          .from('shops').select('id, detail->>phone').in('id', ids);
+        if (detErr) throw detErr;
+        for (const d of (det ?? []) as { id: string; phone: string | null }[]) phoneMap.set(d.id, d.phone ?? null);
+      }
+
+      const result = shops.map(s => ({
         shopId:             s.id,
         name:               s.name,
         gu:                 s.gu,
@@ -244,7 +282,7 @@ export class AdminController {
         thumbnailUrl:       s.representative_image ?? null,
         partnerSyncedAt:    s.partner_synced_at ?? null,
         pilotCoupon:        s.pilot_coupon ?? null,
-        phone:              s.phone ?? null,   // detail->>phone
+        phone:              phoneMap.get(s.id) ?? null,
         naverReservationUrl: null,
       }));
       res.json({ shops: result });
@@ -309,22 +347,14 @@ export class AdminController {
       }
 
       // 1) 카테고리 · 시군구 수집 (가벼운 컬럼만, detail 미접근)
-      const BATCH = 1000;
+      const shopRows = await fetchAllRows<{ category: string | null; gu: string | null }>(
+        (from, to) => this.sbClient.from('shops').select('category, gu').range(from, to),
+      );
       const cats = new Set<string>();
       const gus  = new Set<string>();
-      let offset = 0;
-      while (true) {
-        const { data, error } = await this.sbClient
-          .from('shops')
-          .select('category, gu')
-          .range(offset, offset + BATCH - 1);
-        if (error) throw error;
-        for (const r of (data ?? []) as { category: string | null; gu: string | null }[]) {
-          if (r.category) cats.add(r.category);
-          if (r.gu) gus.add(r.gu);
-        }
-        if (!data || data.length < BATCH) break;
-        offset += BATCH;
+      for (const r of shopRows) {
+        if (r.category) cats.add(r.category);
+        if (r.gu) gus.add(r.gu);
       }
 
       const guList = [...gus].sort((a, b) => a.localeCompare(b, 'ko'));
@@ -457,23 +487,10 @@ export class AdminController {
         ? parseInt(req.query.period as string, 10) : 7;
       const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
 
-      // Supabase 1000건 한도 → 페이지네이션
-      const BATCH = 1000;
-      const allEvents: { shop_id: string | null; created_at: string }[] = [];
-      let offset = 0;
-      while (true) {
-        const { data, error } = await this.sbClient
-          .from('events')
-          .select('shop_id, created_at')
-          .eq('event', 'detail_view')
-          .not('shop_id', 'is', null)
-          .gte('created_at', since)
-          .range(offset, offset + BATCH - 1);
-        if (error) throw error;
-        allEvents.push(...(data ?? []));
-        if (!data || data.length < BATCH) break;
-        offset += BATCH;
-      }
+      const allEvents = await fetchAllRows<{ shop_id: string | null; created_at: string }>(
+        (from, to) => this.sbClient.from('events').select('shop_id, created_at')
+          .eq('event', 'detail_view').not('shop_id', 'is', null).gte('created_at', since).range(from, to),
+      );
 
       const shopCounts = new Map<string, number>();
       const dailyCounts = new Map<string, number>();
@@ -512,21 +529,10 @@ export class AdminController {
         ? parseInt(req.query.period as string, 10) : 7;
       const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
 
-      const BATCH = 1000;
-      const allSessions: { created_at: string; platform: string | null }[] = [];
-      let offset = 0;
-      while (true) {
-        const { data, error } = await this.sbClient
-          .from('events')
-          .select('created_at, platform')
-          .eq('event', 'session_start')
-          .gte('created_at', since)
-          .range(offset, offset + BATCH - 1);
-        if (error) throw error;
-        allSessions.push(...(data ?? []));
-        if (!data || data.length < BATCH) break;
-        offset += BATCH;
-      }
+      const allSessions = await fetchAllRows<{ created_at: string; platform: string | null }>(
+        (from, to) => this.sbClient.from('events').select('created_at, platform')
+          .eq('event', 'session_start').gte('created_at', since).range(from, to),
+      );
 
       const webMap  = new Map<string, number>();
       const tossMap = new Map<string, number>();
@@ -559,22 +565,10 @@ export class AdminController {
         ? parseInt(req.query.period as string, 10) : 7;
       const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
 
-      // Supabase 기본 1000행 한도 → 페이지네이션으로 전량 수집
-      const BATCH = 1000;
-      const leads: { created_at: string }[] = [];
-      let lOffset = 0;
-      while (true) {
-        const { data, error } = await this.sbClient
-          .from('leads')
-          .select('created_at')
-          .eq('kind', 'missed_seat_alert')
-          .gte('created_at', since)
-          .range(lOffset, lOffset + BATCH - 1);
-        if (error) throw error;
-        leads.push(...((data ?? []) as { created_at: string }[]));
-        if (!data || data.length < BATCH) break;
-        lOffset += BATCH;
-      }
+      const leads = await fetchAllRows<{ created_at: string }>(
+        (from, to) => this.sbClient.from('leads').select('created_at')
+          .eq('kind', 'missed_seat_alert').gte('created_at', since).range(from, to),
+      );
 
       const dailyCounts = new Map<string, number>();
       for (const l of leads) {
@@ -618,22 +612,10 @@ export class AdminController {
         ? parseInt(req.query.period as string, 10) : 7;
       const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
 
-      const BATCH = 1000;
-      const allEvents: { shop_id: string | null }[] = [];
-      let offset = 0;
-      while (true) {
-        const { data, error } = await this.sbClient
-          .from('events')
-          .select('shop_id')
-          .eq('event', 'reserve_click')
-          .not('shop_id', 'is', null)
-          .gte('created_at', since)
-          .range(offset, offset + BATCH - 1);
-        if (error) throw error;
-        allEvents.push(...(data ?? []));
-        if (!data || data.length < BATCH) break;
-        offset += BATCH;
-      }
+      const allEvents = await fetchAllRows<{ shop_id: string | null }>(
+        (from, to) => this.sbClient.from('events').select('shop_id')
+          .eq('event', 'reserve_click').not('shop_id', 'is', null).gte('created_at', since).range(from, to),
+      );
 
       const shopCounts = new Map<string, number>();
       for (const e of allEvents) {
@@ -912,28 +894,10 @@ export class AdminController {
   };
 
   // ── 대시보드 요약 (SSE fallback) ─────────────────────────────
+  // SSE 폴링과 동일한 계산을 재사용한다 (예전엔 6개 쿼리를 SSE와 복붙 → 드리프트 위험).
   dashboardSummary = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      const [
-        { rows: uR }, { rows: oR }, partnerRes, { rows: cR }, viewsRes, { rows: iR },
-      ] = await Promise.all([
-        this.rds.query(`SELECT COUNT(*) AS cnt FROM users`),
-        this.rds.query(`SELECT COUNT(*) AS cnt FROM owner_accounts`),
-        this.sbClient.from('shops').select('id', { count: 'exact', head: true }).eq('is_partner', true),
-        this.rds.query(`SELECT COUNT(*) AS cnt FROM partner_codes WHERE used = FALSE AND expires_at > NOW()`),
-        this.sbClient.from('events').select('id', { count: 'exact', head: true })
-          .eq('event', 'detail_view').gte('created_at', since7d),
-        this.rds.query(`SELECT COUNT(*) AS cnt FROM shop_inquiries WHERE status = 'pending'`),
-      ]);
-      res.json({
-        users:        parseInt(uR[0].cnt as string, 10),
-        owners:       parseInt(oR[0].cnt as string, 10),
-        partnerShops: partnerRes.count ?? 0,
-        views7d:      viewsRes.count ?? 0,
-        openCodes:    parseInt(cR[0].cnt as string, 10),
-        pendingInquiries: parseInt(iR[0].cnt as string, 10),
-      });
+      res.json(await this.sse.buildSummary());
     } catch (err) { next(err); }
   };
 
@@ -967,22 +931,11 @@ export class AdminController {
         ),
       ]);
 
-      // 뷰 이벤트 — Supabase 1000건 기본 한도 → 페이지네이션으로 30일 전량 수집
-      const BATCH = 1000;
-      const viewEvents: { created_at: string }[] = [];
-      let vOffset = 0;
-      while (true) {
-        const { data, error } = await this.sbClient
-          .from('events')
-          .select('created_at')
-          .eq('event', 'detail_view')
-          .gte('created_at', since30d)
-          .range(vOffset, vOffset + BATCH - 1);
-        if (error) throw error;
-        viewEvents.push(...((data ?? []) as { created_at: string }[]));
-        if (!data || data.length < BATCH) break;
-        vOffset += BATCH;
-      }
+      // 뷰 이벤트 — Supabase 30일 전량 수집 (1000행 한도 넘겨서)
+      const viewEvents = await fetchAllRows<{ created_at: string }>(
+        (from, to) => this.sbClient.from('events').select('created_at')
+          .eq('event', 'detail_view').gte('created_at', since30d).range(from, to),
+      );
 
       const fmtRows = (rows: Record<string, unknown>[]) =>
         rows.map(r => ({ date: String(r.date).slice(0, 10), count: Number(r.count) }));

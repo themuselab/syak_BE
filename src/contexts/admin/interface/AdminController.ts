@@ -250,28 +250,18 @@ export class AdminController {
   // ── 파트너샵 목록 (Supabase is_partner=true 기준) ────────────
   listPartnerShops = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      // 1단계: 목록은 detail 없이 (detail->>phone을 대량 정렬과 함께 뽑으면 JSONB detoast로
-      //        statement timeout 위험 — listAllShops와 동일하게 2단계로 회피). 1000행 한도도 넘겨 수집.
+      // 파트너샵(is_partner=true)은 소수라 detail->>phone을 한 번에 뽑아도 안전(detoast/timeout은
+      // 45k 전체 정렬에서만 문제 — listAllShops는 2단계로 회피). 1000행 한도만 넘겨 수집.
       type Row = { id: string; name: string; gu: string | null; category: string | null;
         today_open: boolean | null; representative_image: string | null;
-        partner_synced_at: string | null; pilot_coupon: string | null };
+        partner_synced_at: string | null; pilot_coupon: string | null; phone: string | null };
       const shops = await fetchAllRows<Row>(
         (from, to) => this.sbClient.from('shops')
-          .select('id, name, gu, category, today_open, representative_image, partner_synced_at, pilot_coupon')
+          .select('id, name, gu, category, today_open, representative_image, partner_synced_at, pilot_coupon, detail->>phone')
           .eq('is_partner', true)
           .order('partner_synced_at', { ascending: false })
           .range(from, to),
       );
-
-      // 2단계: phone만 id로 재조회 (detoast를 파트너샵 소수 집합으로 한정)
-      const phoneMap = new Map<string, string | null>();
-      const ids = shops.map(s => s.id);
-      if (ids.length) {
-        const { data: det, error: detErr } = await this.sbClient
-          .from('shops').select('id, detail->>phone').in('id', ids);
-        if (detErr) throw detErr;
-        for (const d of (det ?? []) as { id: string; phone: string | null }[]) phoneMap.set(d.id, d.phone ?? null);
-      }
 
       const result = shops.map(s => ({
         shopId:             s.id,
@@ -282,7 +272,7 @@ export class AdminController {
         thumbnailUrl:       s.representative_image ?? null,
         partnerSyncedAt:    s.partner_synced_at ?? null,
         pilotCoupon:        s.pilot_coupon ?? null,
-        phone:              phoneMap.get(s.id) ?? null,
+        phone:              s.phone ?? null,
         naverReservationUrl: null,
       }));
       res.json({ shops: result });

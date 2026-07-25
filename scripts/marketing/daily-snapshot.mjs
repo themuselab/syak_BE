@@ -178,7 +178,10 @@ async function resolveThreadsToken() {
 async function fetchThreads(token) {
   const id = process.env.THREADS_USER_ID;
   if (!token || !id) { warn('threads', new Error('THREADS_ACCESS_TOKEN/THREADS_USER_ID 없음(선택)')); return undefined; }
-  const totals = [], topPosts = [];
+  const totals = [], topPosts = [], comments = [], myReplies = [];
+  // 외부 댓글 판별용 우리 계정 username
+  let myUsername = '';
+  try { myUsername = (await getJSON(`${TH}/me?fields=username&access_token=${token}`)).username || ''; } catch { /* 무시 */ }
   try {
     // 30일 윈도우 필수. views는 일별 values[] 합, 나머지는 total_value.
     const win = `&since=${sinceSec()}&until=${nowSec()}`;
@@ -197,6 +200,7 @@ async function fetchThreads(token) {
     const posts = await getJSON(`${TH}/${id}/threads?fields=text,permalink,timestamp&limit=15&access_token=${token}`);
     const enriched = [];
     for (const p of (posts.data ?? []).slice(0, 10)) {
+      const caption = (p.text || '(내용 없음)').split('\n')[0].slice(0, 24);
       try {
         const pi = await getJSON(`${TH}/${p.id}/insights?metric=views,likes,reposts,replies&access_token=${token}`);
         const g = m => {
@@ -204,19 +208,42 @@ async function fetchThreads(token) {
           return d?.values?.[0]?.value ?? d?.total_value?.value ?? 0;
         };
         enriched.push({
-          caption: (p.text || '(내용 없음)').split('\n')[0].slice(0, 24),
+          caption,
           url: p.permalink ?? null,
           views: g('views'), likes: g('likes'), replies: g('replies'), reposts: g('reposts'),
         });
       } catch { /* per-post 실패 무시 */ }
+
+      // 이 글의 답글: 외부 댓글은 수집(→답글 추천 대상), 우리가 단 답글은 톤 샘플로 축적
+      try {
+        const rep = await getJSON(`${TH}/${p.id}/replies?fields=id,text,username,timestamp&access_token=${token}`);
+        for (const c of (rep.data ?? [])) {
+          if (!c.text) continue;
+          if (c.username === myUsername) {
+            if (myReplies.length < 12) myReplies.push(c.text.replace(/\s+/g, ' ').trim());
+          } else if (c.username) {
+            comments.push({
+              id: c.id, username: c.username, text: c.text, timestamp: c.timestamp ?? null,
+              postId: p.id, postCaption: caption, postUrl: p.permalink ?? null,
+            });
+          }
+        }
+      } catch { /* per-post replies 실패 무시 */ }
     }
     // 리포스트는 대부분 0이라 정렬 기준으로 부적합 → 조회수 기준
     for (const r of enriched.sort((a, b) => b.views - a.views).slice(0, 3))
       topPosts.push({ caption: r.caption, url: r.url, metric: `조회 ${kompact(r.views)}`, sub: `좋아요 ${kompact(r.likes)} · 댓글 ${kompact(r.replies)}` });
   } catch (e) { warn('threads posts', e); }
 
-  if (!totals.length && !topPosts.length) return undefined;
-  return { totals, topPosts };
+  // 최신순 정렬 후 상한 (payload·Gemini 호출 억제)
+  comments.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+
+  if (!totals.length && !topPosts.length && !comments.length) return undefined;
+  const result = { totals, topPosts };
+  if (comments.length) result.comments = comments.slice(0, 20);
+  // 우리 답글 톤 샘플 — 답글 추천 프롬프트에만 쓰고 스냅샷엔 저장하지 않는다(_ 접두)
+  if (myReplies.length) result._toneSamples = myReplies;
+  return result;
 }
 
 // ── 수집: 메타 광고 ─────────────────────────────────────────────
@@ -247,6 +274,20 @@ async function fetchAds() {
 }
 
 // ── Gemini AI 조언 ──────────────────────────────────────────────
+/** Gemini 호출 공통. 실패 시 null. */
+async function callGemini(prompt) {
+  if (!GEMINI_KEY) return null;
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) },
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json();
+  const text = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  if (!text) throw new Error('빈 응답');
+  return text;
+}
+
 /**
  * 형식 고정: (1) 무엇이 조회/반응이 좋았는지 근거를 숫자로 제시
  *            (2) 그래서 어떤 방향의 후속작을 추천
@@ -267,19 +308,39 @@ async function geminiAdvice(platformName, data) {
     summary;
 
   try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) },
-    );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    const text = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    if (!text) throw new Error('빈 응답');
+    const text = await callGemini(prompt);
+    if (!text) return;
     const lines = text.split('\n').map(s => s.replace(/^\s*\d+[.)]\s*/, '').trim()).filter(Boolean);
     data.aiAdvice   = lines[0] ?? text;
     data.aiFollowUp = lines[1] ?? lines[0] ?? text;
   } catch (e) {
     console.error(`  [warn] Gemini(${platformName}) 실패:`, e.message);
+  }
+}
+
+/**
+ * 쓰레드 외부 댓글마다 답글을 '추천'한다 (comment.aiReply 에 저장).
+ * 핵심: 원장님이 그동안 직접 남긴 답글(toneSamples)의 말투·톤을 학습해 그 목소리로 쓴다.
+ * 댓글이 많으면 최근 10개만.
+ */
+async function geminiReplySuggestions(comments, toneSamples = []) {
+  if (!GEMINI_KEY || !comments?.length) return;
+  const toneBlock = toneSamples.length
+    ? '아래는 우리가 그동안 실제로 남긴 답글 예시다. 이 말투·톤·길이·이모지 사용 습관을 그대로 따라 하라:\n' +
+      toneSamples.slice(0, 8).map((t, i) => `${i + 1}. ${t}`).join('\n') + '\n\n'
+    : '';
+  for (const c of comments.slice(0, 10)) {
+    const prompt =
+      '너는 뷰티샵 "뮤즈랩"의 SNS 담당자다. 우리 쓰레드 글에 달린 고객 댓글에 달 답글을 추천하라.\n' +
+      toneBlock +
+      '위 예시와 똑같은 말투로, 이 댓글에 달 답글을 1~2문장으로 써라. 머리말·따옴표 없이 답글 본문만 출력.\n\n' +
+      `우리 글: "${c.postCaption}"\n고객 댓글(@${c.username}): "${c.text}"`;
+    try {
+      const text = await callGemini(prompt);
+      if (text) c.aiReply = text.split('\n').map(s => s.trim()).filter(Boolean).join(' ').slice(0, 300);
+    } catch (e) {
+      console.error('  [warn] Gemini(댓글 답글 추천) 실패:', e.message);
+    }
   }
 }
 
@@ -318,7 +379,10 @@ const [instagram, threads, metaAds] = await Promise.all([
 await Promise.all([
   geminiAdvice('인스타그램', instagram),
   geminiAdvice('쓰레드', threads),
+  geminiReplySuggestions(threads?.comments, threads?._toneSamples),
 ]);
+// 톤 샘플은 프롬프트용 임시 필드 — 스냅샷엔 저장하지 않는다
+if (threads?._toneSamples) delete threads._toneSamples;
 
 const payload = {};
 if (metaAds)   payload.metaAds   = metaAds;

@@ -31,7 +31,7 @@ import { UpdateOwnerSlotUseCase } from '../contexts/owner-slots/application/Upda
 import { DeleteOwnerSlotUseCase } from '../contexts/owner-slots/application/DeleteOwnerSlotUseCase';
 import { OwnerSlotsController } from '../contexts/owner-slots/interface/OwnerSlotsController';
 import { RedisCacheService } from '../shared/cache/RedisCacheService';
-import { NullCacheService } from '../shared/cache/NullCacheService';
+import { InMemoryCacheService } from '../shared/cache/InMemoryCacheService';
 import { ICacheService } from '../shared/cache/ICacheService';
 
 // Auth
@@ -111,11 +111,13 @@ export function buildDependencies(): AppDependencies {
   const rds = getRdsPool();
   const sbClient = getSupabaseClient();      // 샵/슬롯/어드민
 
-  // ── Redis 캐시 (샵 목록/상세 캐싱) ───────────────────────────
-  // REDIS_URL 없으면 NullCacheService로 fallback (캐시 미사용)
+  // ── 캐시 (샵 목록/상세) ──────────────────────────────────────
+  // REDIS_URL 있으면 Redis, 없으면 프로세스 내 인메모리(LRU+TTL)로 fallback.
+  // 예전엔 NullCacheService(no-op)라 운영(Redis 미설정)에서 소비자 카탈로그가
+  // 전혀 캐시되지 않고 매번 Supabase로 직행했다.
   const cache: ICacheService = process.env.REDIS_URL
     ? new RedisCacheService(process.env.REDIS_URL)
-    : new NullCacheService();
+    : new InMemoryCacheService();
 
   // ── Auth (RDS) ────────────────────────────────────────────
   const userRepo = new PgUserRepository(rds);

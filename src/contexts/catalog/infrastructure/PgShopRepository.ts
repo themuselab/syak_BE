@@ -23,6 +23,14 @@ export class PgShopRepository implements IShopRepository {
   ) {}
 
   async findMany(filter: ShopFilter): Promise<ShopListResult> {
+    // 지도 좌표는 격자(소수 2자리 ≈ 1.1km)로 스냅한다.
+    // 정밀 좌표를 그대로 쓰면 지도를 조금만 움직여도 캐시 키가 매번 달라져(=미스)
+    // 소비자 지도 조회가 전부 Supabase 직행이 된다. 5km 박스 기준 중심 이동 ≤0.5km라
+    // 결과 차이는 사실상 없고, 근처 팬/줌은 같은 캐시를 공유해 즉시 응답한다.
+    if (filter.lat != null && filter.lng != null) {
+      filter = { ...filter, lat: Math.round(filter.lat * 100) / 100, lng: Math.round(filter.lng * 100) / 100 };
+    }
+
     const cacheKey = filterCacheKey(filter);
     const cached = await this.cache.get<ShopListResult>(cacheKey);
     if (cached) return cached;

@@ -8,7 +8,7 @@ import {
   generateMarketingImages as runImageGeneration, ImageGenConfigError,
   MARKETING_BUCKET, MarketingImage,
 } from '../infrastructure/MarketingImageService';
-import { replyToThread, publishThread, ThreadsConfigError } from '../infrastructure/ThreadsPublishService';
+import { replyToThread, publishThread, generateThreadsDraft, ThreadsConfigError } from '../infrastructure/ThreadsPublishService';
 
 function toCamel(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -868,6 +868,25 @@ export class AdminController {
         return;
       }
       // 쓰레드 API 거부(권한/레이트리밋 등)는 원인 메시지를 그대로 전달
+      res.status(502).json({ code: 'THREADS_ERROR', message: (err as Error).message });
+    }
+  };
+
+  // ── 주제로 새 글 초안 추천 (우리 글 말투 학습) ────────────────
+  threadsDraft = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { topic } = req.body ?? {};
+      if (!topic?.trim()) {
+        res.status(400).json({ code: 'VALIDATION_ERROR', message: 'topic이 필요합니다' });
+        return;
+      }
+      const result = await generateThreadsDraft(this.sbClient, String(topic).trim());
+      res.json(result);
+    } catch (err) {
+      if (err instanceof ThreadsConfigError) {
+        res.status(503).json({ code: 'THREADS_UNAVAILABLE', message: err.message });
+        return;
+      }
       res.status(502).json({ code: 'THREADS_ERROR', message: (err as Error).message });
     }
   };

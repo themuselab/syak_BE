@@ -50,6 +50,7 @@ export function adminRouter(admin: AdminController): Router {
   router.post('/marketing/images/generate',  admin.generateMarketingImages); // NVIDIA FLUX → Storage (기본 5장, ~15초)
   router.delete('/marketing/images/:imageId', admin.deleteMarketingImage);   // Storage 객체 + 스냅샷 동시 삭제
   router.post('/marketing/threads/reply',     admin.threadsReply);           // 댓글에 직접 답글 등록
+  router.post('/marketing/threads/draft',     admin.threadsDraft);           // 주제로 새 글 초안 추천
   router.post('/marketing/threads/post',      admin.threadsPost);            // 새 쓰레드 글 발행
 
   // 통계

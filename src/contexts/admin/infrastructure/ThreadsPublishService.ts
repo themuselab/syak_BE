@@ -76,3 +76,47 @@ export async function publishThread(sb: SupabaseClient, text: string) {
   const token = await getToken(sb);
   return createAndPublish(token, { text });
 }
+
+async function callGemini(prompt: string): Promise<string> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new ThreadsConfigError('GEMINI_API_KEY 가 서버에 설정되지 않았습니다');
+  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) },
+  );
+  if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
+  const json = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+  const text = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  if (!text) throw new Error('Gemini 빈 응답');
+  return text;
+}
+
+/**
+ * 주제(topic)로 새 쓰레드 글 초안을 추천한다.
+ * 우리가 그동안 쓴 글들의 말투·구조·길이를 학습해(스타일 샘플) 그 목소리로 쓴다.
+ */
+export async function generateThreadsDraft(sb: SupabaseClient, topic: string): Promise<{ draft: string; usedSamples: number }> {
+  const token = await getToken(sb);
+  // 우리 최근 글 본문 = 스타일 샘플
+  let samples: string[] = [];
+  try {
+    const res = await fetch(`${TH}/me/threads?fields=text&limit=15&access_token=${token}`);
+    const json = await res.json() as { data?: { text?: string }[] };
+    samples = (json.data ?? []).map(p => (p.text ?? '').trim()).filter(t => t.length > 10).slice(0, 10);
+  } catch { /* 샘플 없이도 진행 */ }
+
+  const styleBlock = samples.length
+    ? '아래는 우리가 그동안 실제로 쓴 쓰레드 글이다. 이 말투·문장 길이·줄바꿈·이모지 습관·글 구조를 그대로 따라 하라:\n' +
+      samples.map((s, i) => `[예시 ${i + 1}]\n${s}`).join('\n\n') + '\n\n'
+    : '';
+
+  const prompt =
+    '너는 뷰티샵 "뮤즈랩"의 SNS 담당자다. 아래 주제로 쓰레드에 올릴 새 글 초안을 써라.\n' +
+    styleBlock +
+    '위 예시와 똑같은 말투·톤으로, 주어진 주제의 글을 자연스럽게 완성하라. 머리말·따옴표·설명 없이 글 본문만 출력. 500자 이내.\n\n' +
+    `주제: ${topic}`;
+
+  const draft = await callGemini(prompt);
+  return { draft: draft.slice(0, 500), usedSamples: samples.length };
+}

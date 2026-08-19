@@ -53,13 +53,19 @@ export function adminRouter(admin: AdminController): Router {
   router.post('/marketing/threads/draft',     admin.threadsDraft);           // 주제로 새 글 초안 추천
   router.post('/marketing/threads/post',      admin.threadsPost);            // 새 쓰레드 글 발행
 
-  // 통계
+  // 통계 (Supabase events 기반 — GA4 이관 후 대체 예정)
   router.get('/stats/shop-views',           admin.shopViewStats);          // AD-002
   router.get('/stats/reservation-clicks',   admin.reservationClickStats);  // AD-003
   router.get('/stats/cancel-requests',      admin.cancelRequestStats);     // AD-004
   router.get('/stats/partner-conversion',   admin.partnerConversionStats); // AD-005
   router.get('/stats/visitors',             admin.visitorTrend);            // web 방문자 추이
   router.get('/trends',                     admin.getTrends);               // 트렌드 (30일)
+
+  // GA4 (Data API — 행동/마케팅 분석). 실시간 운영 지표는 위 RDS 기반 유지
+  router.get('/ga4/overview',               admin.ga4OverviewHandler);      // 활성 사용자/세션/예약클릭
+  router.get('/ga4/shop-views',             admin.ga4ShopViewsHandler);     // 샵 상세조회 Top
+  router.get('/ga4/reservations',           admin.ga4ReservationsHandler);  // 예약클릭 Top + 총합
+  router.get('/ga4/acquisition',            admin.ga4AcquisitionHandler);   // 유입 경로
 
   return router;
 }

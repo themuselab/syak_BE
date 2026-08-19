@@ -12,6 +12,7 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
+    "@google-analytics/data": "^7.0.0",
     "@supabase/supabase-js": "^2.108.2",
     "@types/ws": "^8.18.1",
     "apple-signin-auth": "^1.7.3",

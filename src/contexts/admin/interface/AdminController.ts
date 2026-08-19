@@ -9,6 +9,7 @@ import {
   MARKETING_BUCKET, MarketingImage,
 } from '../infrastructure/MarketingImageService';
 import { replyToThread, publishThread, generateThreadsDraft, ThreadsConfigError } from '../infrastructure/ThreadsPublishService';
+import { ga4Overview, ga4TopShops, ga4EventCount, ga4Acquisition, GA4ConfigError } from '../infrastructure/GA4Service';
 
 function toCamel(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -870,6 +871,75 @@ export class AdminController {
       // 쓰레드 API 거부(권한/레이트리밋 등)는 원인 메시지를 그대로 전달
       res.status(502).json({ code: 'THREADS_ERROR', message: (err as Error).message });
     }
+  };
+
+  // ── GA4: 개요 (활성 사용자/세션/예약클릭) ────────────────────
+  private ga4Handle(res: Response, err: unknown): void {
+    if (err instanceof GA4ConfigError) {
+      res.status(503).json({ code: 'GA4_UNAVAILABLE', message: err.message });
+    } else {
+      console.error('[ga4]', (err as Error).message);
+      res.status(502).json({ code: 'GA4_ERROR', message: (err as Error).message });
+    }
+  }
+
+  ga4OverviewHandler = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const days = Math.min(Math.max(parseInt(String(req.query.days ?? '30'), 10) || 30, 1), 365);
+      const data = await this.cachedStats(`ga4:overview:${days}`, () => ga4Overview(days));
+      res.json(data);
+    } catch (err) { this.ga4Handle(res, err); }
+  };
+
+  // 샵 상세조회 Top (GA4 shop_view, 샵명은 Supabase에서 매핑)
+  ga4ShopViewsHandler = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const days = Math.min(Math.max(parseInt(String(req.query.days ?? '30'), 10) || 30, 1), 365);
+      const stats = await this.cachedStats(`ga4:shopViews:${days}`, async () => {
+        const rows = await ga4TopShops('shop_view', days, 20);
+        const shopMap = await fetchShopMap(this.sbClient, rows.map(r => r.shopId), 'id, name, gu');
+        return rows.map(r => ({
+          shopId: r.shopId,
+          shopName: (shopMap.get(r.shopId)?.name as string) ?? null,
+          gu: (shopMap.get(r.shopId)?.gu as string) ?? null,
+          views: r.count,
+        }));
+      });
+      res.json({ days, stats });
+    } catch (err) { this.ga4Handle(res, err); }
+  };
+
+  // 예약클릭 Top + 총합
+  ga4ReservationsHandler = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const days = Math.min(Math.max(parseInt(String(req.query.days ?? '30'), 10) || 30, 1), 365);
+      const data = await this.cachedStats(`ga4:reservations:${days}`, async () => {
+        const [rows, total] = await Promise.all([
+          ga4TopShops('reserve_click', days, 20),
+          ga4EventCount('reserve_click', days),
+        ]);
+        const shopMap = await fetchShopMap(this.sbClient, rows.map(r => r.shopId), 'id, name, gu');
+        return {
+          total,
+          stats: rows.map(r => ({
+            shopId: r.shopId,
+            shopName: (shopMap.get(r.shopId)?.name as string) ?? null,
+            gu: (shopMap.get(r.shopId)?.gu as string) ?? null,
+            clicks: r.count,
+          })),
+        };
+      });
+      res.json({ days, ...data });
+    } catch (err) { this.ga4Handle(res, err); }
+  };
+
+  // 유입 경로 (쓰레드·광고 기여)
+  ga4AcquisitionHandler = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const days = Math.min(Math.max(parseInt(String(req.query.days ?? '30'), 10) || 30, 1), 365);
+      const sources = await this.cachedStats(`ga4:acq:${days}`, () => ga4Acquisition(days, 15));
+      res.json({ days, sources });
+    } catch (err) { this.ga4Handle(res, err); }
   };
 
   // ── 주제로 새 글 초안 추천 (우리 글 말투 학습) ────────────────

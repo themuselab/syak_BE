@@ -21,7 +21,7 @@ export function buildRouter(controllers: Controllers): Router {
   router.use('/favorites',     favoriteRouter(controllers.favorite));
   router.use('/notifications', notificationRouter(controllers.notification));
   router.use('/users',         userRouter(controllers.user));
-  router.use('/owner',         ownerRouter(controllers.ownerAuth, controllers.ownerSlots, controllers.analytics));
+  router.use('/owner',         ownerRouter(controllers.ownerAuth, controllers.ownerSlots, controllers.analytics, controllers.ownerDashboard));
   router.use('/admin',         adminRouter(controllers.admin));
 
   router.post('/inquiries', controllers.inquiry.submit);  // SO-000a

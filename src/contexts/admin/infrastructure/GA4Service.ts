@@ -166,6 +166,29 @@ export async function ga4VisitorsDaily(days = 7): Promise<{
   return { web: toArr(webMap), toss: toArr(tossMap), totalWeb: sum(webMap), totalToss: sum(tossMap) };
 }
 
+/** 특정 샵의 일별 shop_view 조회수 (사장님 대시보드 '가게 조회 수') */
+export async function ga4ShopViewsDaily(shopId: string, days = 7): Promise<DailyPoint[]> {
+  const [res] = await client().runReport({
+    property: property(),
+    dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
+    dimensions: [{ name: 'date' }],
+    metrics: [{ name: 'eventCount' }],
+    dimensionFilter: {
+      andGroup: {
+        expressions: [
+          { filter: { fieldName: 'eventName', stringFilter: { value: 'shop_view' } } },
+          { filter: { fieldName: 'customEvent:shop_id', stringFilter: { value: String(shopId) } } },
+        ],
+      },
+    },
+    orderBys: [{ dimension: { dimensionName: 'date' } }],
+  });
+  return (res.rows ?? []).map(r => ({
+    date: fmtDate(r.dimensionValues?.[0]?.value ?? ''),
+    value: num(r.metricValues?.[0]?.value),
+  }));
+}
+
 /** 유입 경로별 세션 (쓰레드·메타광고 기여 파악) */
 export async function ga4Acquisition(days = 30, limit = 15): Promise<{ source: string; sessions: number }[]> {
   const [res] = await client().runReport({

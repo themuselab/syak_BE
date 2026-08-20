@@ -29,7 +29,15 @@ import { GetOwnerSlotsUseCase } from '../contexts/owner-slots/application/GetOwn
 import { CreateOwnerSlotUseCase } from '../contexts/owner-slots/application/CreateOwnerSlotUseCase';
 import { UpdateOwnerSlotUseCase } from '../contexts/owner-slots/application/UpdateOwnerSlotUseCase';
 import { DeleteOwnerSlotUseCase } from '../contexts/owner-slots/application/DeleteOwnerSlotUseCase';
+import { ReserveOwnerSlotUseCase } from '../contexts/owner-slots/application/ReserveOwnerSlotUseCase';
+import { RegisterAndNotifyUseCase } from '../contexts/owner-slots/application/RegisterAndNotifyUseCase';
+import { DispatchSlotNotifier } from '../contexts/owner-slots/infrastructure/DispatchSlotNotifier';
 import { OwnerSlotsController } from '../contexts/owner-slots/interface/OwnerSlotsController';
+
+// Owner Dashboard (대시보드/활동알림/프로필/매장정보)
+import { PgOwnerDashboardRepository } from '../contexts/owner-dashboard/infrastructure/PgOwnerDashboardRepository';
+import { SupabaseShopService } from '../contexts/owner-dashboard/infrastructure/SupabaseShopService';
+import { OwnerDashboardController } from '../contexts/owner-dashboard/interface/OwnerDashboardController';
 import { RedisCacheService } from '../shared/cache/RedisCacheService';
 import { InMemoryCacheService } from '../shared/cache/InMemoryCacheService';
 import { ICacheService } from '../shared/cache/ICacheService';
@@ -95,6 +103,7 @@ export interface Controllers {
   ownerAuth: OwnerAuthController;
   ownerInternal: OwnerInternalController;
   ownerSlots: OwnerSlotsController;
+  ownerDashboard: OwnerDashboardController;
   analytics: AnalyticsController;
   admin: AdminController;
   inquiry: InquiryController;
@@ -203,13 +212,27 @@ export function buildDependencies(): AppDependencies {
     new GeneratePartnerCodeUseCase(partnerCodeRepo),
   );
 
-  // ── Owner Slots (RDS — 사장님 등록 슬롯 CRUD) ─────────────────
+  // ── Owner Dashboard 인프라 (RDS 집계 + Supabase 샵 + 활동알림) ─
+  const ownerDashRepo = new PgOwnerDashboardRepository(rds);
+  const shopInfoService = new SupabaseShopService(sbClient);
+  const slotNotifier = new DispatchSlotNotifier(dispatchUseCase);
+
+  // ── Owner Slots (RDS — 사장님 등록 슬롯 CRUD + 알림 발송) ──────
   const ownerSlotRepo = new PgOwnerSlotRepository(rds);
   const ownerSlotsController = new OwnerSlotsController(
     new GetOwnerSlotsUseCase(ownerSlotRepo),
-    new CreateOwnerSlotUseCase(ownerSlotRepo),
+    new RegisterAndNotifyUseCase(
+      new CreateOwnerSlotUseCase(ownerSlotRepo),
+      ownerSlotRepo, shopInfoService, slotNotifier, ownerDashRepo,
+    ),
     new UpdateOwnerSlotUseCase(ownerSlotRepo),
     new DeleteOwnerSlotUseCase(ownerSlotRepo),
+    new ReserveOwnerSlotUseCase(ownerSlotRepo, ownerDashRepo),
+  );
+
+  // ── Owner Dashboard 컨트롤러 ─────────────────────────────────
+  const ownerDashboardController = new OwnerDashboardController(
+    ownerDashRepo, ownerSlotRepo, shopInfoService,
   );
 
   // ── Admin (env 기반 단일 계정) ───────────────────────────────
@@ -230,6 +253,7 @@ export function buildDependencies(): AppDependencies {
     ownerAuth: ownerAuthController,
     ownerInternal: ownerInternalController,
     ownerSlots: ownerSlotsController,
+    ownerDashboard: ownerDashboardController,
     analytics: analyticsController,
     admin: adminController,
     inquiry: inquiryController,

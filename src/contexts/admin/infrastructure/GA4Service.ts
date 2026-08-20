@@ -114,6 +114,58 @@ export async function ga4TopShops(eventName: string, days = 30, limit = 20): Pro
     .filter(r => r.shopId && r.shopId !== '(not set)');
 }
 
+/** 특정 이벤트의 일별 발생 수 [{date, value}] */
+export async function ga4DailyEventCount(eventName: string, days = 7): Promise<DailyPoint[]> {
+  const [res] = await client().runReport({
+    property: property(),
+    dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
+    dimensions: [{ name: 'date' }],
+    metrics: [{ name: 'eventCount' }],
+    dimensionFilter: { filter: { fieldName: 'eventName', stringFilter: { value: eventName } } },
+    orderBys: [{ dimension: { dimensionName: 'date' } }],
+  });
+  return (res.rows ?? []).map(r => ({ date: fmtDate(r.dimensionValues?.[0]?.value ?? ''), value: num(r.metricValues?.[0]?.value) }));
+}
+
+/** 특정 이벤트가 발생한 고유 shop 수 (rowCount) */
+export async function ga4DistinctShops(eventName: string, days = 7): Promise<number> {
+  const [res] = await client().runReport({
+    property: property(),
+    dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
+    dimensions: [{ name: 'customEvent:shop_id' }],
+    metrics: [{ name: 'eventCount' }],
+    dimensionFilter: { filter: { fieldName: 'eventName', stringFilter: { value: eventName } } },
+    limit: 1,
+  });
+  return num(res.rowCount);
+}
+
+/** 일별 방문(세션)을 플랫폼(web vs 앱)으로 나눠 반환 */
+export async function ga4VisitorsDaily(days = 7): Promise<{
+  web: DailyPoint[]; toss: DailyPoint[]; totalWeb: number; totalToss: number;
+}> {
+  const [res] = await client().runReport({
+    property: property(),
+    dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
+    dimensions: [{ name: 'date' }, { name: 'platform' }],
+    metrics: [{ name: 'sessions' }],
+    orderBys: [{ dimension: { dimensionName: 'date' } }],
+  });
+  // GA4 platform: 'web' | 'iOS' | 'Android'. web는 web, 모바일 앱은 toss(앱) 버킷.
+  const webMap = new Map<string, number>();
+  const tossMap = new Map<string, number>();
+  for (const r of res.rows ?? []) {
+    const date = fmtDate(r.dimensionValues?.[0]?.value ?? '');
+    const plat = (r.dimensionValues?.[1]?.value ?? '').toLowerCase();
+    const v = num(r.metricValues?.[0]?.value);
+    const m = plat === 'web' ? webMap : tossMap;
+    m.set(date, (m.get(date) ?? 0) + v);
+  }
+  const toArr = (m: Map<string, number>) => [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value }));
+  const sum = (m: Map<string, number>) => [...m.values()].reduce((a, b) => a + b, 0);
+  return { web: toArr(webMap), toss: toArr(tossMap), totalWeb: sum(webMap), totalToss: sum(tossMap) };
+}
+
 /** 유입 경로별 세션 (쓰레드·메타광고 기여 파악) */
 export async function ga4Acquisition(days = 30, limit = 15): Promise<{ source: string; sessions: number }[]> {
   const [res] = await client().runReport({

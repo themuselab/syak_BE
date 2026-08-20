@@ -9,7 +9,10 @@ import {
   MARKETING_BUCKET, MarketingImage,
 } from '../infrastructure/MarketingImageService';
 import { replyToThread, publishThread, generateThreadsDraft, ThreadsConfigError } from '../infrastructure/ThreadsPublishService';
-import { ga4Overview, ga4TopShops, ga4EventCount, ga4Acquisition, GA4ConfigError } from '../infrastructure/GA4Service';
+import {
+  ga4Overview, ga4TopShops, ga4EventCount, ga4Acquisition,
+  ga4DailyEventCount, ga4DistinctShops, ga4VisitorsDaily, GA4ConfigError,
+} from '../infrastructure/GA4Service';
 
 function toCamel(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -486,80 +489,52 @@ export class AdminController {
     } catch (err) { next(err); }
   };
 
-  // ── 통계: 샵별 조회 수 (수퍼베이스 events 테이블, 페이지네이션) ─
+  // ── 통계: 샵별 조회 수 (GA4 shop_view) ───────────────────────
   shopViewStats = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const period = ['30d','90d'].includes(req.query.period as string)
         ? parseInt(req.query.period as string, 10) : 7;
       const result = await this.cachedStats(`shopViews:${period}`, async () => {
-        const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
-        const allEvents = await fetchAllRows<{ shop_id: string | null; created_at: string }>(
-          (from, to) => this.sbClient.from('events').select('shop_id, created_at')
-            .eq('event', 'detail_view').not('shop_id', 'is', null).gte('created_at', since).range(from, to),
-        );
-
-        const shopCounts = new Map<string, number>();
-        const dailyCounts = new Map<string, number>();
-        for (const e of allEvents) {
-          if (e.shop_id) shopCounts.set(e.shop_id, (shopCounts.get(e.shop_id) ?? 0) + 1);
-          const date = e.created_at.slice(0, 10);
-          dailyCounts.set(date, (dailyCounts.get(date) ?? 0) + 1);
-        }
-
-        const sorted = [...shopCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
-        const shopMap = await fetchShopMap(this.sbClient, sorted.map(([id]) => id), 'id, name, gu');
-        const stats = sorted.map(([shopId, views]) => ({
-          shopId,
-          shopName: (shopMap.get(shopId)?.name as string) ?? null,
-          gu:       (shopMap.get(shopId)?.gu as string) ?? null,
-          views:    String(views),
+        const [top, daily, total, uniqueShops] = await Promise.all([
+          ga4TopShops('shop_view', period, 20),
+          ga4DailyEventCount('shop_view', period),
+          ga4EventCount('shop_view', period),
+          ga4DistinctShops('shop_view', period),
+        ]);
+        const shopMap = await fetchShopMap(this.sbClient, top.map(t => t.shopId), 'id, name, gu');
+        const stats = top.map(t => ({
+          shopId: t.shopId,
+          shopName: (shopMap.get(t.shopId)?.name as string) ?? null,
+          gu:       (shopMap.get(t.shopId)?.gu as string) ?? null,
+          views:    String(t.count),
         }));
-        const daily = [...dailyCounts.entries()]
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([date, views]) => ({ date, views: String(views) }));
-
-        return { period: `${period}d`, total: allEvents.length, uniqueShops: shopCounts.size, daily, stats };
+        return {
+          period: `${period}d`, total, uniqueShops,
+          daily: daily.map(d => ({ date: d.date, views: String(d.value) })),
+          stats,
+        };
       });
       res.json(result);
-    } catch (err) { next(err); }
+    } catch (err) { this.ga4Handle(res, err); }
   };
 
-  // ── 통계: web 방문자 추이 (session_start, platform 구분) ──────
+  // ── 통계: 방문자 추이 (GA4 sessions, web/앱 구분) ─────────────
   visitorTrend = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const period = ['30d','90d'].includes(req.query.period as string)
         ? parseInt(req.query.period as string, 10) : 7;
       const result = await this.cachedStats(`visitors:${period}`, async () => {
-        const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
-        const allSessions = await fetchAllRows<{ created_at: string; platform: string | null }>(
-          (from, to) => this.sbClient.from('events').select('created_at, platform')
-            .eq('event', 'session_start').gte('created_at', since).range(from, to),
-        );
-
-        const webMap  = new Map<string, number>();
-        const tossMap = new Map<string, number>();
-        for (const s of allSessions) {
-          const date = s.created_at.slice(0, 10);
-          if ((s.platform || 'web') === 'web') {
-            webMap.set(date, (webMap.get(date) ?? 0) + 1);
-          } else {
-            tossMap.set(date, (tossMap.get(date) ?? 0) + 1);
-          }
-        }
-
-        const toArr = (m: Map<string, number>) =>
-          [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, count]) => ({ date, count }));
-
+        const v = await ga4VisitorsDaily(period);
         return {
           period:    `${period}d`,
-          totalWeb:  [...webMap.values()].reduce((a, b) => a + b, 0),
-          totalToss: [...tossMap.values()].reduce((a, b) => a + b, 0),
-          web:       toArr(webMap),
-          toss:      toArr(tossMap),
+          totalWeb:  v.totalWeb,
+          totalToss: v.totalToss,
+          web:       v.web.map(d => ({ date: d.date, count: d.value })),
+          toss:      v.toss.map(d => ({ date: d.date, count: d.value })),
         };
       });
       res.json(result);
-    } catch (err) { next(err); }
+    } catch (err) { this.ga4Handle(res, err); }
   };
 
   // ── 통계: 취소석 알림 신청 건수 (수퍼베이스 leads 테이블) ─────
@@ -611,34 +586,24 @@ export class AdminController {
     } catch (err) { next(err); }
   };
 
-  // ── 통계: 예약 버튼 클릭 수 (수퍼베이스 events 테이블, 페이지네이션) ─
+  // ── 통계: 예약 버튼 클릭 수 (GA4 reserve_click) ──────────────
   reservationClickStats = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const period = ['30d','90d'].includes(req.query.period as string)
         ? parseInt(req.query.period as string, 10) : 7;
       const result = await this.cachedStats(`reserveClicks:${period}`, async () => {
-        const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
-        const allEvents = await fetchAllRows<{ shop_id: string | null }>(
-          (from, to) => this.sbClient.from('events').select('shop_id')
-            .eq('event', 'reserve_click').not('shop_id', 'is', null).gte('created_at', since).range(from, to),
-        );
-
-        const shopCounts = new Map<string, number>();
-        for (const e of allEvents) {
-          if (e.shop_id) shopCounts.set(e.shop_id, (shopCounts.get(e.shop_id) ?? 0) + 1);
-        }
-        const sorted = [...shopCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
-        const shopMap = await fetchShopMap(this.sbClient, sorted.map(([id]) => id), 'id, name, gu');
-        const stats = sorted.map(([shopId, clicks]) => ({
-          shopId,
-          shopName: (shopMap.get(shopId)?.name as string) ?? null,
-          gu:       (shopMap.get(shopId)?.gu as string) ?? null,
-          clicks:   String(clicks),
+        const top = await ga4TopShops('reserve_click', period, 20);
+        const shopMap = await fetchShopMap(this.sbClient, top.map(t => t.shopId), 'id, name, gu');
+        const stats = top.map(t => ({
+          shopId: t.shopId,
+          shopName: (shopMap.get(t.shopId)?.name as string) ?? null,
+          gu:       (shopMap.get(t.shopId)?.gu as string) ?? null,
+          clicks:   String(t.count),
         }));
         return { period: `${period}d`, stats };
       });
       res.json(result);
-    } catch (err) { next(err); }
+    } catch (err) { this.ga4Handle(res, err); }
   };
 
   // ── 샵 도입 문의 목록 ─────────────────────────────────────────
@@ -757,9 +722,13 @@ export class AdminController {
       const start = new Date(`${dayStr}T00:00:00+09:00`).toISOString();
       const end   = new Date(`${nowKst.toISOString().slice(0, 10)}T00:00:00+09:00`).toISOString();
 
-      const [viewsRes, { rows: uRows }, { rows: iRows }, { rows: pRows }, mktRes] = await Promise.all([
-        this.sbClient.from('events').select('id', { count: 'exact', head: true })
-          .eq('event', 'detail_view').gte('created_at', start).lt('created_at', end),
+      // 어제 샵 조회수는 GA4(shop_view)에서. GA4 실패해도 리포트는 나오게 0 처리.
+      const yesterdayViews = ga4DailyEventCount('shop_view', 2)
+        .then(rows => rows.find(r => r.date === dayStr)?.value ?? 0)
+        .catch(() => 0);
+
+      const [views, { rows: uRows }, { rows: iRows }, { rows: pRows }, mktRes] = await Promise.all([
+        yesterdayViews,
         this.rds.query(`SELECT COUNT(*) AS cnt FROM users WHERE created_at >= $1 AND created_at < $2`, [start, end]),
         this.rds.query(`SELECT COUNT(*) AS cnt FROM shop_inquiries WHERE created_at >= $1 AND created_at < $2`, [start, end]),
         this.rds.query(`SELECT COUNT(*) AS cnt FROM shop_inquiries WHERE status = 'pending'`),
@@ -779,7 +748,7 @@ export class AdminController {
 
       res.json({
         date: dayStr,
-        views:        viewsRes.count ?? 0,
+        views:        views,
         newUsers:     parseInt(uRows[0].cnt as string, 10),
         newInquiries: parseInt(iRows[0].cnt as string, 10),
         pendingInquiries: parseInt(pRows[0].cnt as string, 10),
@@ -1067,24 +1036,13 @@ export class AdminController {
         ),
       ]);
 
-      // 뷰 이벤트 — Supabase 30일 전량 수집 (1000행 한도 넘겨서)
-      const viewEvents = await fetchAllRows<{ created_at: string }>(
-        (from, to) => this.sbClient.from('events').select('created_at')
-          .eq('event', 'detail_view').gte('created_at', since30d).range(from, to),
-      );
-
       const fmtRows = (rows: Record<string, unknown>[]) =>
         rows.map(r => ({ date: String(r.date).slice(0, 10), count: Number(r.count) }));
 
-      // 뷰 이벤트 일별 집계
-      const viewMap = new Map<string, number>();
-      for (const e of viewEvents) {
-        const d = (e.created_at as string).slice(0, 10);
-        viewMap.set(d, (viewMap.get(d) ?? 0) + 1);
-      }
-      const viewDaily = [...viewMap.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, count]) => ({ date, count }));
+      // 뷰 일별 집계는 GA4(shop_view)에서. GA4 실패해도 나머지는 나오게 [].
+      const viewDaily = await ga4DailyEventCount('shop_view', 30)
+        .then(rows => rows.map(d => ({ date: d.date, count: d.value })))
+        .catch(() => [] as { date: string; count: number }[]);
 
       return {
         users:   fmtRows(userRows),

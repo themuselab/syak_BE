@@ -28,6 +28,7 @@ export function buildRouter(controllers: Controllers): Router {
 
   // 내부 관리 API (X-Internal-Key 필요, 서버간 통신용)
   router.post('/internal/partner-codes', requireInternalKey, controllers.ownerInternal.createCode);
+  router.get('/internal/partner-engagement', requireInternalKey, controllers.admin.partnerEngagement); // 디코 리포트용
 
   return router;
 }

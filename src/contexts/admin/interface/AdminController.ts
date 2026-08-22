@@ -11,7 +11,7 @@ import {
 import { replyToThread, publishThread, generateThreadsDraft, ThreadsConfigError } from '../infrastructure/ThreadsPublishService';
 import {
   ga4Overview, ga4TopShops, ga4EventCount, ga4Acquisition,
-  ga4DailyEventCount, ga4DistinctShops, ga4VisitorsDaily, GA4ConfigError,
+  ga4DailyEventCount, ga4DistinctShops, ga4VisitorsDaily, ga4EventCountForShops, GA4ConfigError,
 } from '../infrastructure/GA4Service';
 
 function toCamel(row: Record<string, unknown>): Record<string, unknown> {
@@ -713,6 +713,52 @@ export class AdminController {
 
   // ── 일일 리포트 (관리자 첫 진입 시 모달) ─────────────────────
   /** 전날 기준: 웹 조회수 · 신규 소비자 회원 · 신규 도입 문의 + 최신 마케팅 AI 조언 */
+  // ── 파트너샵 조회·예약클릭 (파트너 집합 × GA4) ─────────────────
+  /** 파트너 샵 id 집합 (RDS: 오너 연동 + 코드 발급). Supabase is_partner는 정지 중이라 RDS 기준. */
+  private async partnerShopIds(): Promise<{ all: string[]; linked: number; coded: number }> {
+    const [a, l, c] = await Promise.all([
+      this.rds.query(
+        `SELECT DISTINCT shop_id FROM (
+           SELECT shop_id FROM owner_accounts WHERE shop_id IS NOT NULL
+           UNION SELECT shop_id FROM partner_codes
+         ) t`,
+      ),
+      this.rds.query(`SELECT COUNT(*) AS c FROM owner_accounts WHERE shop_id IS NOT NULL`),
+      this.rds.query(`SELECT COUNT(DISTINCT shop_id) AS c FROM partner_codes`),
+    ]);
+    return {
+      all: a.rows.map(r => r.shop_id as string),
+      linked: parseInt(l.rows[0].c as string, 10),
+      coded: parseInt(c.rows[0].c as string, 10),
+    };
+  }
+
+  private async computePartnerEngagement(start: string, end: string): Promise<{
+    partnerCount: number; linkedCount: number; codeCount: number; views: number; clicks: number;
+  }> {
+    const { all, linked, coded } = await this.partnerShopIds();
+    const [views, clicks] = await Promise.all([
+      ga4EventCountForShops('shop_view', all, { start, end }).catch(() => 0),
+      ga4EventCountForShops('reserve_click', all, { start, end }).catch(() => 0),
+    ]);
+    return { partnerCount: all.length, linkedCount: linked, codeCount: coded, views, clicks };
+  }
+
+  /** 내부용(디코 리포트 등) — 파트너샵 조회·예약클릭. period=1d|7d|30d */
+  partnerEngagement = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const period = (req.query.period as string) ?? '7d';
+      const range: Record<string, [string, string]> = {
+        '1d': ['yesterday', 'yesterday'], '7d': ['7daysAgo', 'today'], '30d': ['30daysAgo', 'today'],
+      };
+      const [start, end] = range[period] ?? range['7d'];
+      const data = await this.computePartnerEngagement(start, end);
+      res.json({ period, ...data });
+    } catch (err) {
+      res.status(502).json({ code: 'PARTNER_ENGAGEMENT_FAILED', message: (err as Error).message });
+    }
+  };
+
   dailyReport = async (_req: Request, res: Response): Promise<void> => {
     try {
       // KST 기준 '어제' 00:00 ~ 오늘 00:00
@@ -727,13 +773,14 @@ export class AdminController {
         .then(rows => rows.find(r => r.date === dayStr)?.value ?? 0)
         .catch(() => 0);
 
-      const [views, { rows: uRows }, { rows: iRows }, { rows: pRows }, mktRes] = await Promise.all([
+      const [views, { rows: uRows }, { rows: iRows }, { rows: pRows }, mktRes, partner] = await Promise.all([
         yesterdayViews,
         this.rds.query(`SELECT COUNT(*) AS cnt FROM users WHERE created_at >= $1 AND created_at < $2`, [start, end]),
         this.rds.query(`SELECT COUNT(*) AS cnt FROM shop_inquiries WHERE created_at >= $1 AND created_at < $2`, [start, end]),
         this.rds.query(`SELECT COUNT(*) AS cnt FROM shop_inquiries WHERE status = 'pending'`),
         this.sbClient.from('marketing_snapshots').select('snapshot_date, data')
           .order('snapshot_date', { ascending: false }).limit(1),
+        this.computePartnerEngagement('yesterday', 'yesterday').catch(() => null),
       ]);
 
       const snap = (mktRes.data ?? [])[0] as { snapshot_date: string; data: MarketingSnapshotData } | undefined;
@@ -752,11 +799,12 @@ export class AdminController {
         newUsers:     parseInt(uRows[0].cnt as string, 10),
         newInquiries: parseInt(iRows[0].cnt as string, 10),
         pendingInquiries: parseInt(pRows[0].cnt as string, 10),
+        partner,   // { partnerCount, linkedCount, codeCount, views, clicks } | null (어제 기준)
         marketing,
       });
     } catch (err) {
       console.error('[dailyReport]', (err as Error).message);
-      res.json({ date: null, views: 0, newUsers: 0, newInquiries: 0, pendingInquiries: 0, marketing: null });
+      res.json({ date: null, views: 0, newUsers: 0, newInquiries: 0, pendingInquiries: 0, partner: null, marketing: null });
     }
   };
 

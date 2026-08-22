@@ -189,6 +189,29 @@ export async function ga4ShopViewsDaily(shopId: string, days = 7): Promise<Daily
   }));
 }
 
+/** 특정 샵 집합(파트너샵 등)의 이벤트 합계 — customEvent:shop_id inList 필터 */
+export async function ga4EventCountForShops(
+  eventName: string,
+  shopIds: string[],
+  opts: { start?: string; end?: string } = {},
+): Promise<number> {
+  if (!shopIds.length) return 0;
+  const [res] = await client().runReport({
+    property: property(),
+    dateRanges: [{ startDate: opts.start ?? '30daysAgo', endDate: opts.end ?? 'today' }],
+    metrics: [{ name: 'eventCount' }],
+    dimensionFilter: {
+      andGroup: {
+        expressions: [
+          { filter: { fieldName: 'eventName', stringFilter: { value: eventName } } },
+          { filter: { fieldName: 'customEvent:shop_id', inListFilter: { values: shopIds.map(String) } } },
+        ],
+      },
+    },
+  });
+  return num(res.rows?.[0]?.metricValues?.[0]?.value);
+}
+
 /** 유입 경로별 세션 (쓰레드·메타광고 기여 파악) */
 export async function ga4Acquisition(days = 30, limit = 15): Promise<{ source: string; sessions: number }[]> {
   const [res] = await client().runReport({

@@ -12,6 +12,8 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
+    "@aws-sdk/client-cost-explorer": "^3.1116.0",
+    "@aws-sdk/client-freetier": "^3.1116.0",
     "@google-analytics/data": "^7.0.0",
     "@supabase/supabase-js": "^2.108.2",
     "@types/ws": "^8.18.1",

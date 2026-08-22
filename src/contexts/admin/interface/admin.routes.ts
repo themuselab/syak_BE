@@ -66,6 +66,7 @@ export function adminRouter(admin: AdminController): Router {
   router.get('/ga4/shop-views',             admin.ga4ShopViewsHandler);     // 샵 상세조회 Top
   router.get('/ga4/reservations',           admin.ga4ReservationsHandler);  // 예약클릭 Top + 총합
   router.get('/ga4/acquisition',            admin.ga4AcquisitionHandler);   // 유입 경로
+  router.get('/aws-cost',                   admin.awsCost);                 // 이번 달 AWS 비용 + 프리티어 잔여
 
   return router;
 }

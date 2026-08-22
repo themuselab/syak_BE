@@ -13,6 +13,7 @@ import {
   ga4Overview, ga4TopShops, ga4EventCount, ga4Acquisition,
   ga4DailyEventCount, ga4DistinctShops, ga4VisitorsDaily, ga4EventCountForShops, GA4ConfigError,
 } from '../infrastructure/GA4Service';
+import { awsMonthToDate, awsFreeTier, AwsCostConfigError, type AwsCostResponse } from '../infrastructure/AwsCostService';
 
 function toCamel(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -756,6 +757,31 @@ export class AdminController {
       res.json({ period, ...data });
     } catch (err) {
       res.status(502).json({ code: 'PARTNER_ENGAGEMENT_FAILED', message: (err as Error).message });
+    }
+  };
+
+  // ── AWS 이번 달 비용 + 프리티어 잔여 (Cost Explorer/FreeTier, 12h 캐시) ──
+  private awsCostCache: { at: number; data: AwsCostResponse | null } = { at: 0, data: null };
+  awsCost = async (_req: Request, res: Response): Promise<void> => {
+    try {
+      if (this.awsCostCache.data && Date.now() - this.awsCostCache.at < 12 * 3600 * 1000) {
+        res.json(this.awsCostCache.data); return;
+      }
+      const [costR, ftR] = await Promise.allSettled([awsMonthToDate(), awsFreeTier()]);
+      const errMsg = (r: PromiseRejectedResult) =>
+        r.reason instanceof AwsCostConfigError ? r.reason.message : (r.reason as Error)?.message ?? '조회 실패';
+
+      const data: AwsCostResponse = {
+        cost:          costR.status === 'fulfilled' ? costR.value : null,
+        costError:     costR.status === 'rejected' ? errMsg(costR) : null,
+        freeTier:      ftR.status === 'fulfilled' ? ftR.value : null,
+        freeTierError: ftR.status === 'rejected' ? errMsg(ftR) : null,
+      };
+      // 둘 다 실패면 캐시하지 않음(권한 설정 후 바로 반영되게)
+      if (data.cost || data.freeTier) this.awsCostCache = { at: Date.now(), data };
+      res.json(data);
+    } catch (err) {
+      res.status(502).json({ code: 'AWS_COST_FAILED', message: (err as Error).message });
     }
   };
 

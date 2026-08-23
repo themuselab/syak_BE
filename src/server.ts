@@ -25,7 +25,7 @@ function applyMiddleware(app: Express): void {
     credentials: true,
   }));
 
-  app.use(express.json());
+  app.use(express.json({ limit: '20mb' })); // 스크래퍼 슬롯 벌크 동기화(수만 행) 대비
   app.use(cookieParser());
   app.use(httpLogger);
 }

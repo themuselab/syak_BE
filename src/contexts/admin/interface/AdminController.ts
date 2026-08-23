@@ -384,7 +384,8 @@ export class AdminController {
       const sido     = req.query.sido as string | undefined;
       const gu       = req.query.gu as string | undefined;
       const sortRaw  = req.query.sort as string | undefined;
-      const sort     = ['name', 'category', 'gu'].includes(sortRaw ?? '') ? sortRaw! : 'name';
+      // 기본 인기순(review) — 이름순이면 '__','감' 같은 이상한 스크랩 이름이 앞에 옴
+      const sort     = ['name', 'category', 'gu', 'review'].includes(sortRaw ?? '') ? sortRaw! : 'review';
       const ascending = req.query.dir !== 'desc';
       const limit  = 50;
       const offset = (page - 1) * limit;
@@ -405,18 +406,28 @@ export class AdminController {
         cond.push(`gu = ANY(${add(list)}::text[])`);
       }
       const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
-      const orderCol = (['name', 'gu', 'category'] as string[]).includes(sort) ? sort : 'name';
       const dir = ascending ? 'ASC' : 'DESC';
+      const orderExpr = sort === 'review'
+        ? 'review_count DESC NULLS LAST'
+        : `${(['name', 'gu', 'category'] as string[]).includes(sort) ? sort : 'name'} ${dir} NULLS LAST`;
+
+      // 전체 건수: 필터 없으면 통계 근사치(reltuples)로 빠르게, 있으면 정확 카운트
+      let total: number;
+      if (cond.length) {
+        const c = await this.rds.query(`SELECT COUNT(*)::int AS n FROM shops ${where}`, params);
+        total = c.rows[0].n as number;
+      } else {
+        const c = await this.rds.query(`SELECT reltuples::bigint AS n FROM pg_class WHERE relname = 'shops'`);
+        total = Number(c.rows[0]?.n ?? 0);
+      }
 
       const { rows } = await this.rds.query(
         `SELECT id, name, gu, category, today_open, representative_image, is_partner,
-                detail->>'phone' AS phone, detail->>'roadAddress' AS road_address,
-                COUNT(*) OVER() AS total_count
-         FROM shops ${where} ORDER BY ${orderCol} ${dir} NULLS LAST
+                detail->>'phone' AS phone, detail->>'roadAddress' AS road_address
+         FROM shops ${where} ORDER BY ${orderExpr}
          LIMIT ${add(limit)} OFFSET ${add(offset)}`,
         params,
       );
-      const total = rows.length ? Number(rows[0].total_count) : 0;
       const shops = rows.map(s => ({
         shopId:       s.id,
         name:         (s.name as string) ?? null,

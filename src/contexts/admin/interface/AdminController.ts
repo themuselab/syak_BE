@@ -1011,6 +1011,15 @@ export class AdminController {
     }
   };
 
+  // ── 범용 이미지 프록시 (S3 presigned 302, 공개) — 샵 사진 등 ──
+  imgProxy = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const key = ((req.params as unknown as string[])[0] || '').replace(/^\/+/, '');
+      if (!/^[\w./-]+$/.test(key) || key.includes('..')) { res.status(400).end(); return; }
+      res.redirect(302, await s3PresignGet(key, 3600));
+    } catch { res.status(404).end(); }
+  };
+
   // ── 대시보드 요약 (SSE fallback) ─────────────────────────────
   // SSE 폴링과 동일한 계산을 재사용한다 (예전엔 6개 쿼리를 SSE와 복붙 → 드리프트 위험).
   dashboardSummary = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {

@@ -40,6 +40,10 @@ export function buildRouter(controllers: Controllers): Router {
   router.post('/internal/shops/summary', requireInternalKey, controllers.shopInternal.summary);   // slot_summary
   router.post('/internal/shops/reconcile-today-open', requireInternalKey, controllers.shopInternal.reconcileTodayOpen);
   router.post('/internal/marketing/snapshot', requireInternalKey, controllers.admin.internalMarketingSnapshot); // 마케팅 스킬
+  router.get('/internal/shops/price-targets',  requireInternalKey, controllers.shopInternal.priceTargets);    // price_sync
+  router.post('/internal/shops/prices',        requireInternalKey, controllers.shopInternal.updatePrices);
+  router.get('/internal/shops/partner-unsynced', requireInternalKey, controllers.shopInternal.partnerUnsynced); // sync_partners
+  router.post('/internal/shops/enrich',        requireInternalKey, controllers.shopInternal.enrichShop);
 
   return router;
 }

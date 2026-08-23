@@ -48,6 +48,66 @@ export class ShopSyncService {
     return n;
   }
 
+  // ── 가격 동기화(price_sync) ──────────────────────────────────
+  /** 가격 갱신 대상: detail 있는 샵, price_synced_at 오래된 순 */
+  async getPriceTargets(limit: number): Promise<Record<string, unknown>[]> {
+    const { rows } = await this.rds.query(
+      `SELECT id, category FROM shops WHERE detail IS NOT NULL
+       ORDER BY price_synced_at ASC NULLS FIRST LIMIT $1`, [Math.min(Math.max(limit, 1), 2000)],
+    );
+    return rows;
+  }
+
+  /** min_price/price_tier/price_synced_at 일괄 갱신 */
+  async updatePrices(rows: { id: string; min_price: number | null; price_tier: string; price_synced_at?: string }[]): Promise<number> {
+    let n = 0;
+    for (const r of rows) {
+      await this.rds.query(
+        `UPDATE shops SET min_price=$2, price_tier=$3, price_synced_at=COALESCE($4, now()) WHERE id=$1`,
+        [r.id, r.min_price ?? null, r.price_tier, r.price_synced_at ?? null],
+      );
+      n++;
+    }
+    return n;
+  }
+
+  // ── 파트너 동기화(sync_partners) ─────────────────────────────
+  /** is_partner=true 이면서 아직 sync 안 된 샵 */
+  async getPartnerUnsynced(limit: number): Promise<Record<string, unknown>[]> {
+    const { rows } = await this.rds.query(
+      `SELECT id, name, gu, category FROM shops
+       WHERE is_partner = true AND partner_synced_at IS NULL LIMIT $1`, [Math.min(Math.max(limit, 1), 200)],
+    );
+    return rows;
+  }
+
+  /** 파트너 상세 enrich upsert (Playwright가 수집한 필드) */
+  async enrichShop(r: Record<string, unknown>): Promise<void> {
+    const gu = (r.gu as string) ?? (Array.isArray(r.gus) ? (r.gus as string[])[0] : null);
+    const category = (r.category as string) ?? (Array.isArray(r.categories) ? (r.categories as string[])[0] : null);
+    const categories = Array.isArray(r.categories) ? r.categories : (category ? [category] : []);
+    await this.rds.query(
+      `INSERT INTO shops (id, name, gu, category, categories, lat, lng, representative_image, review_count,
+         price_tier, min_price, first_visit_deal, has_event, reservable, biz_id, item_id, detail,
+         is_partner, partner_synced_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,true,now(),now())
+       ON CONFLICT (id) DO UPDATE SET
+         name=COALESCE(EXCLUDED.name,shops.name), gu=COALESCE(EXCLUDED.gu,shops.gu),
+         category=COALESCE(EXCLUDED.category,shops.category), categories=EXCLUDED.categories,
+         lat=COALESCE(EXCLUDED.lat,shops.lat), lng=COALESCE(EXCLUDED.lng,shops.lng),
+         representative_image=COALESCE(EXCLUDED.representative_image,shops.representative_image),
+         review_count=EXCLUDED.review_count, price_tier=EXCLUDED.price_tier, min_price=EXCLUDED.min_price,
+         first_visit_deal=EXCLUDED.first_visit_deal, has_event=EXCLUDED.has_event, reservable=EXCLUDED.reservable,
+         biz_id=COALESCE(EXCLUDED.biz_id,shops.biz_id), item_id=COALESCE(EXCLUDED.item_id,shops.item_id),
+         detail=EXCLUDED.detail, is_partner=true, partner_synced_at=now(), updated_at=now()`,
+      [r.id, r.name ?? null, gu, category, JSON.stringify(categories),
+       r.lat ?? null, r.lng ?? null, r.representative_image ?? null,
+       (r.review_count as number) ?? 0, r.price_tier ?? '미정', r.min_price ?? null,
+       (r.first_visit_deal as boolean) ?? false, (r.has_event as boolean) ?? false, (r.reservable as boolean) ?? false,
+       r.biz_id ?? null, r.item_id ?? null, JSON.stringify(r.detail ?? {})],
+    );
+  }
+
   /** 지난 슬롯 정리(비용관리): 소비자에 안 보이는 과거 scraper 슬롯 삭제.
    *  owner 슬롯은 사장님 히스토리라 보존. 반환: 삭제 행 수. */
   async purgePastSlots(date: string): Promise<number> {

@@ -31,4 +31,30 @@ export class ShopInternalController {
       res.json(await this.svc.reconcileTodayOpen(date, after));
     } catch (err) { next(err); }
   };
+
+  priceTargets = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try { res.json({ targets: await this.svc.getPriceTargets(parseInt(String(req.query.limit ?? '300'), 10) || 300) }); }
+    catch (err) { next(err); }
+  };
+
+  updatePrices = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+      res.json({ updated: await this.svc.updatePrices(rows) });
+    } catch (err) { next(err); }
+  };
+
+  partnerUnsynced = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try { res.json({ partners: await this.svc.getPartnerUnsynced(parseInt(String(req.query.limit ?? '50'), 10) || 50) }); }
+    catch (err) { next(err); }
+  };
+
+  enrichShop = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const row = req.body?.shop ?? req.body;
+      if (!row?.id) { res.status(400).json({ code: 'VALIDATION_ERROR', message: 'shop.id 필요' }); return; }
+      await this.svc.enrichShop(row);
+      res.json({ ok: true, id: row.id });
+    } catch (err) { next(err); }
+  };
 }

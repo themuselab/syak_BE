@@ -156,7 +156,7 @@ export function buildDependencies(): AppDependencies {
   const analyticsController = new AnalyticsController(new GetShopAnalyticsUseCase(analyticsRepo));
 
   // ── Catalog (Supabase REST API — 읽기 전용, Redis 캐시) ──────
-  const shopRepo = new PgShopRepository(sbClient, cache);
+  const shopRepo = new PgShopRepository(rds, cache);
   const catalogController = new CatalogController(
     new GetShopsUseCase(shopRepo),
     new GetShopDetailUseCase(shopRepo),
@@ -166,7 +166,7 @@ export function buildDependencies(): AppDependencies {
 
   // ── Reservation (Supabase REST API — 읽기 전용) ─────────────
   // 슬롯은 RDS에서 읽고(egress 회피) + Redis/인메모리 캐시. 샵 이름만 Supabase(캐시).
-  const slotRepo = new PgSlotRepository(rds, sbClient, cache);
+  const slotRepo = new PgSlotRepository(rds, cache);
   const slotSyncController = new SlotSyncController(
     new SyncScraperSlotsUseCase(slotRepo),
     new GetOpenNowShopsUseCase(slotRepo),

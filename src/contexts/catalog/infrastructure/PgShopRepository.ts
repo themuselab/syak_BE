@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { Pool } from 'pg';
 import { IShopRepository, ShopListResult } from '../ports/IShopRepository';
 import { Shop, ShopSummary, ShopMenu, ShopReview, Category, PriceTier, ReservationRoute } from '../domain/Shop';
 import { ShopFilter, SortOrder } from '../domain/ShopFilter';
@@ -7,52 +7,46 @@ import { ICacheService } from '../../../shared/cache/ICacheService';
 const LIST_TTL   = 300;
 const DETAIL_TTL = 600;
 
-const SUMMARY_SELECT =
+const SUMMARY_COLS =
   'id, name, gu, min_price, price_tier, categories, today_open, slot_summary, event_desc, event_price, is_partner, lat, lng, representative_image, review_count';
-const FULL_SELECT =
-  `${SUMMARY_SELECT}, biz_id, detail`;
+const FULL_COLS = `${SUMMARY_COLS}, biz_id, detail`;
 
 function filterCacheKey(filter: ShopFilter): string {
   return `shops:list:${JSON.stringify(filter, Object.keys(filter).sort())}`;
 }
 
+/** RDS(pg) 기반 샵 리포지토리 — Supabase에서 이전. jsonb는 node-pg가 JS로 파싱. */
 export class PgShopRepository implements IShopRepository {
   constructor(
-    private readonly sb: SupabaseClient,
+    private readonly rds: Pool,
     private readonly cache: ICacheService,
   ) {}
 
   async findMany(filter: ShopFilter): Promise<ShopListResult> {
-    // 지도 좌표는 격자(소수 2자리 ≈ 1.1km)로 스냅한다.
-    // 정밀 좌표를 그대로 쓰면 지도를 조금만 움직여도 캐시 키가 매번 달라져(=미스)
-    // 소비자 지도 조회가 전부 Supabase 직행이 된다. 5km 박스 기준 중심 이동 ≤0.5km라
-    // 결과 차이는 사실상 없고, 근처 팬/줌은 같은 캐시를 공유해 즉시 응답한다.
     if (filter.lat != null && filter.lng != null) {
       filter = { ...filter, lat: Math.round(filter.lat * 100) / 100, lng: Math.round(filter.lng * 100) / 100 };
     }
-
     const cacheKey = filterCacheKey(filter);
     const cached = await this.cache.get<ShopListResult>(cacheKey);
     if (cached) return cached;
 
-    // 슬롯 테이블 사전 조회 (slotDate 또는 availableWithinDays)
+    // 슬롯 사전 조회 (RDS slots — scraper/owner 통합)
     let slotShopIds: string[] | null = null;
     if (filter.slotDate || filter.availableWithinDays) {
-      let slotQ = this.sb.from('slots').select('shop_id');
+      const p: unknown[] = [];
+      let where = "source IN ('scraper','owner') AND (status IS NULL OR status NOT IN ('reserved','expired'))";
       if (filter.slotDate) {
-        slotQ = slotQ.eq('slot_date', filter.slotDate);
-        if (filter.slotTime) slotQ = slotQ.eq('start_time', `${filter.slotTime}:00`);
+        p.push(filter.slotDate); where += ` AND date = $${p.length}::date`;
+        if (filter.slotTime) { p.push(`${filter.slotTime}:00`); where += ` AND start_time = $${p.length}::time`; }
       } else if (filter.availableWithinDays) {
         const today = new Date();
         const dates = Array.from({ length: filter.availableWithinDays }, (_, i) => {
-          const d = new Date(today);
-          d.setDate(d.getDate() + i);
-          return d.toISOString().slice(0, 10);
+          const d = new Date(today); d.setDate(d.getDate() + i); return d.toISOString().slice(0, 10);
         });
-        slotQ = slotQ.in('slot_date', dates);
+        p.push(dates); where += ` AND date = ANY($${p.length}::date[])`;
       }
-      const { data: slotRows } = await slotQ;
-      slotShopIds = [...new Set((slotRows ?? []).map((r: { shop_id: string }) => r.shop_id))];
+      const { rows } = await this.rds.query(`SELECT DISTINCT shop_id FROM slots WHERE ${where}`, p);
+      slotShopIds = rows.map(r => r.shop_id as string);
       if (slotShopIds.length === 0) {
         return { items: [], total: 0, page: filter.page ?? 1, limit: filter.limit ?? 20 };
       }
@@ -61,61 +55,55 @@ export class PgShopRepository implements IShopRepository {
     const limit  = filter.limit ?? 20;
     const offset = ((filter.page ?? 1) - 1) * limit;
 
-    let q = this.sb.from('shops').select(SUMMARY_SELECT, { count: 'exact' });
+    const cond: string[] = [];
+    const params: unknown[] = [];
+    const add = (v: unknown) => { params.push(v); return `$${params.length}`; };
 
-    // categories는 jsonb 배열 — cs(@>)로 포함 여부 확인, 복수 카테고리는 OR
     if (filter.categories?.length) {
-      if (filter.categories.length === 1) {
-        q = q.filter('categories', 'cs', JSON.stringify([filter.categories[0]]));
-      } else {
-        const orClause = filter.categories
-          .map(c => `categories.cs.${JSON.stringify([c])}`)
-          .join(',');
-        q = q.or(orClause);
-      }
+      const ors = filter.categories.map(c => `categories @> ${add(JSON.stringify([c]))}::jsonb`);
+      cond.push(`(${ors.join(' OR ')})`);
     }
-    if (filter.priceTiers?.length) q = q.in('price_tier', filter.priceTiers);
-    if (filter.hasEvent)           q = q.not('event_desc', 'is', null);
-    if (filter.hasSlot)            q = q.eq('today_open', true);
-    if (filter.districts?.length)  q = q.in('gu', filter.districts);
-    if (filter.q)                  q = q.ilike('name', `%${filter.q}%`);
-    if (slotShopIds)               q = q.in('id', slotShopIds);
+    if (filter.priceTiers?.length) cond.push(`price_tier = ANY(${add(filter.priceTiers)}::text[])`);
+    if (filter.hasEvent)           cond.push(`event_desc IS NOT NULL`);
+    if (filter.hasSlot)            cond.push(`today_open = true`);
+    if (filter.districts?.length)  cond.push(`gu = ANY(${add(filter.districts)}::text[])`);
+    if (filter.q)                  cond.push(`name ILIKE ${add(`%${filter.q}%`)}`);
+    if (slotShopIds)               cond.push(`id = ANY(${add(slotShopIds)}::text[])`);
 
-    // 위치 기반 bounding box 필터
     if (filter.lat != null && filter.lng != null) {
       const r = filter.radius ?? 5;
       const latDelta = r / 111;
       const lngDelta = r / (111 * Math.cos((filter.lat * Math.PI) / 180));
-      q = q
-        .gte('lat', filter.lat - latDelta)
-        .lte('lat', filter.lat + latDelta)
-        .gte('lng', filter.lng - lngDelta)
-        .lte('lng', filter.lng + lngDelta);
+      cond.push(`lat BETWEEN ${add(filter.lat - latDelta)} AND ${add(filter.lat + latDelta)}`);
+      cond.push(`lng BETWEEN ${add(filter.lng - lngDelta)} AND ${add(filter.lng + lngDelta)}`);
     }
+
+    const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
 
     const sort: SortOrder = filter.sort ?? 'default';
-    if (sort === 'price_asc') {
-      q = q.order('min_price', { ascending: true, nullsFirst: false });
-    } else if (sort === 'price_desc') {
-      q = q.order('min_price', { ascending: false, nullsFirst: false });
-    } else if (sort === 'partner') {
-      q = q.order('is_partner', { ascending: false }).order('name', { ascending: true });
-    } else {
-      q = q.order('today_open', { ascending: false })
-           .order('is_partner', { ascending: false })
-           .order('name',       { ascending: true });
-    }
+    let orderBy: string;
+    if (sort === 'price_asc')       orderBy = 'min_price ASC NULLS LAST';
+    else if (sort === 'price_desc') orderBy = 'min_price DESC NULLS LAST';
+    else if (sort === 'partner')    orderBy = 'is_partner DESC, name ASC';
+    else                            orderBy = 'today_open DESC, is_partner DESC, name ASC';
 
-    const { data, count, error } = await q.range(offset, offset + limit - 1);
-    if (error) throw error;
+    const limitPh = add(limit);
+    const offsetPh = add(offset);
+    const { rows } = await this.rds.query(
+      `SELECT ${SUMMARY_COLS}, COUNT(*) OVER() AS total_count
+       FROM shops ${where}
+       ORDER BY ${orderBy}
+       LIMIT ${limitPh} OFFSET ${offsetPh}`,
+      params,
+    );
 
+    const total = rows.length ? Number(rows[0].total_count) : 0;
     const result: ShopListResult = {
-      items: (data ?? []).map(r => this.mapSummary(r as Record<string, unknown>)),
-      total: count ?? 0,
-      page:  filter.page ?? 1,
+      items: rows.map(r => this.mapSummary(r as Record<string, unknown>)),
+      total,
+      page: filter.page ?? 1,
       limit,
     };
-
     await this.cache.set(cacheKey, result, LIST_TTL);
     return result;
   }
@@ -125,15 +113,10 @@ export class PgShopRepository implements IShopRepository {
     const cached = await this.cache.get<Shop>(cacheKey);
     if (cached) return cached;
 
-    const { data, error } = await this.sb
-      .from('shops')
-      .select(FULL_SELECT)
-      .eq('id', id)
-      .single();
+    const { rows } = await this.rds.query(`SELECT ${FULL_COLS} FROM shops WHERE id = $1`, [id]);
+    if (!rows[0]) return null;
 
-    if (error || !data) return null;
-
-    const shop = this.mapFull(data as Record<string, unknown>);
+    const shop = this.mapFull(rows[0] as Record<string, unknown>);
     await this.cache.set(cacheKey, shop, DETAIL_TTL);
     return shop;
   }
@@ -155,9 +138,7 @@ export class PgShopRepository implements IShopRepository {
       lat:         row.lat as number | null,
       lng:         row.lng as number | null,
       reviewCount: (row.review_count as number) ?? 0,
-      photos:      row.representative_image
-                     ? [row.representative_image as string]
-                     : [],
+      photos:      row.representative_image ? [row.representative_image as string] : [],
     };
   }
 
@@ -166,14 +147,11 @@ export class PgShopRepository implements IShopRepository {
     const rawRoutes = (detail?.reservationRoutes as Array<{ type?: string; label?: string; value?: string }> | null) ?? [];
     const imgs    = detail?.images as Record<string, unknown> | null;
 
-    // 예약/문의 수단 — type이 정확히 저장돼 있다(naver=실제예약, talktalk/instagram/kakao=문의, phone=전화)
     const reservationRoutes = rawRoutes
       .filter((r) => r?.value)
       .map((r) => ({ type: (r.type ?? 'phone') as ReservationRoute['type'], label: r.label ?? '', value: r.value as string }));
-    // 대표 예약 링크: 진짜 예약(naver)을 최우선, 없으면 첫 항목
     const primary = reservationRoutes.find((r) => r.type === 'naver') ?? reservationRoutes[0] ?? null;
 
-    // 갤러리 우선, 없으면 리뷰 이미지, 없으면 대표 이미지 1장
     const gallery = (imgs?.gallery as string[] | null) ?? [];
     const photos  = gallery.length > 0
       ? gallery

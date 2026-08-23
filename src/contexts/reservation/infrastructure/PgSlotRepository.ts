@@ -1,5 +1,4 @@
 import { Pool } from 'pg';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { ISlotRepository } from '../ports/ISlotRepository';
 import { Slot, SlotSearchQuery, ShopWithSlots } from '../domain/Slot';
 import { ICacheService } from '../../../shared/cache/ICacheService';
@@ -16,7 +15,6 @@ const SEARCH_TTL = 60;  // 검색 결과
 export class PgSlotRepository implements ISlotRepository {
   constructor(
     private readonly rds: Pool,
-    private readonly sb: SupabaseClient,
     private readonly cache: ICacheService,
   ) {}
 
@@ -80,14 +78,13 @@ export class PgSlotRepository implements ISlotRepository {
     return result;
   }
 
-  /** 샵 이름/구 조회 (Supabase) — 5분 캐시로 egress 최소화 */
+  /** 샵 이름/구 조회 (RDS) — 5분 캐시 */
   private async fetchShops(shopIds: string[], districts: string[] | null): Promise<Map<string, { name: string; gu: string | null }>> {
     const key = `shops:meta:${[...shopIds].sort().join(',')}`;
     let all = await this.cache.get<{ id: string; name: string; gu: string | null }[]>(key);
     if (!all) {
-      const { data, error } = await this.sb.from('shops').select('id, name, gu').in('id', shopIds);
-      if (error) throw error;
-      all = (data ?? []) as { id: string; name: string; gu: string | null }[];
+      const { rows } = await this.rds.query('SELECT id, name, gu FROM shops WHERE id = ANY($1::text[])', [shopIds]);
+      all = rows as { id: string; name: string; gu: string | null }[];
       await this.cache.set(key, all, 300);
     }
     const map = new Map<string, { name: string; gu: string | null }>();

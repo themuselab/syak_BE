@@ -1,13 +1,12 @@
 import { Response } from 'express';
 import { Pool } from 'pg';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../../../shared/logger';
 import { ga4EventCount } from './GA4Service';
 
 let _instance: AdminSSEService | null = null;
 export function getAdminSSE(): AdminSSEService | null { return _instance; }
-export function initAdminSSE(rds: Pool, sb: SupabaseClient): AdminSSEService {
-  _instance = new AdminSSEService(rds, sb);
+export function initAdminSSE(rds: Pool): AdminSSEService {
+  _instance = new AdminSSEService(rds);
   return _instance;
 }
 
@@ -27,7 +26,7 @@ export class AdminSSEService {
   private intervalId: NodeJS.Timeout | null = null;
   private readonly PUSH_INTERVAL_MS = 15_000;
 
-  constructor(private readonly rds: Pool, private readonly sb: SupabaseClient) {}
+  constructor(private readonly rds: Pool) {}
 
   addClient(res: Response): void {
     res.setHeader('Content-Type', 'text/event-stream');

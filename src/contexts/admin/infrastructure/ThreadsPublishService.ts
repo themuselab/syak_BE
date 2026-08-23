@@ -1,9 +1,8 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { Pool } from 'pg';
 
 /**
  * 관리자 페이지에서 쓰레드에 직접 답글/글을 올린다.
- * 토큰은 EC2 env가 아니라 Supabase marketing_tokens(key='threads')에 자가치유 저장돼
- * 있으므로 거기서 읽는다(없으면 env fallback).
+ * 토큰은 RDS marketing_tokens(key='threads')에 저장(없으면 env fallback).
  *
  * 발행은 2단계: (1) 컨테이너 생성 → creation_id (2) threads_publish 로 발행.
  */
@@ -13,11 +12,10 @@ const TH = 'https://graph.threads.net/v1.0';
 /** 설정 누락(토큰 없음)은 서버 장애가 아니라 503 + 원인 메시지로 구분 */
 export class ThreadsConfigError extends Error {}
 
-async function getToken(sb: SupabaseClient): Promise<string> {
+async function getToken(rds: Pool): Promise<string> {
   try {
-    const { data } = await sb.from('marketing_tokens').select('token').eq('key', 'threads').limit(1);
-    const t = (data as { token?: string }[] | null)?.[0]?.token;
-    if (t) return t;
+    const { rows } = await rds.query(`SELECT token FROM marketing_tokens WHERE key = 'threads' LIMIT 1`);
+    if (rows[0]?.token) return rows[0].token as string;
   } catch { /* fallback으로 */ }
   const env = process.env.THREADS_ACCESS_TOKEN;
   if (env) return env;
@@ -66,14 +64,14 @@ async function createAndPublish(token: string, params: Record<string, string>): 
 }
 
 /** 특정 댓글/글에 답글 달기 */
-export async function replyToThread(sb: SupabaseClient, replyToId: string, text: string) {
-  const token = await getToken(sb);
+export async function replyToThread(rds: Pool, replyToId: string, text: string) {
+  const token = await getToken(rds);
   return createAndPublish(token, { text, reply_to_id: replyToId });
 }
 
 /** 새 쓰레드 글 발행 */
-export async function publishThread(sb: SupabaseClient, text: string) {
-  const token = await getToken(sb);
+export async function publishThread(rds: Pool, text: string) {
+  const token = await getToken(rds);
   return createAndPublish(token, { text });
 }
 
@@ -96,8 +94,8 @@ async function callGemini(prompt: string): Promise<string> {
  * 주제(topic)로 새 쓰레드 글 초안을 추천한다.
  * 우리가 그동안 쓴 글들의 말투·구조·길이를 학습해(스타일 샘플) 그 목소리로 쓴다.
  */
-export async function generateThreadsDraft(sb: SupabaseClient, topic: string): Promise<{ draft: string; usedSamples: number }> {
-  const token = await getToken(sb);
+export async function generateThreadsDraft(rds: Pool, topic: string): Promise<{ draft: string; usedSamples: number }> {
+  const token = await getToken(rds);
   // 우리 최근 글 본문 = 스타일 샘플
   let samples: string[] = [];
   try {

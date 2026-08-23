@@ -27,6 +27,7 @@ export function buildRouter(controllers: Controllers): Router {
   router.use('/admin',         adminRouter(controllers.admin));
 
   router.post('/inquiries', controllers.inquiry.submit);  // SO-000a
+  router.get('/marketing/img/:date/:file', controllers.admin.marketingImg); // 마케팅 이미지(S3 presigned 302, 공개)
 
   // 내부 관리 API (X-Internal-Key 필요, 서버간 통신용)
   router.post('/internal/partner-codes', requireInternalKey, controllers.ownerInternal.createCode);

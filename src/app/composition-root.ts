@@ -1,4 +1,4 @@
-import { getRdsPool, getSupabaseClient } from '../shared/lib/database';
+import { getRdsPool } from '../shared/lib/database';
 
 // Admin
 import { AdminController } from '../contexts/admin/interface/AdminController';
@@ -124,10 +124,9 @@ export interface AppDependencies {
 
 export function buildDependencies(): AppDependencies {
   // ── DB 연결 ─────────────────────────────────────────────────
-  // rds      : 사용자 데이터 (users, favorites, notifications, ...)
-  // sbClient : 샵/슬롯 읽기 + 어드민 CRUD (Supabase REST API — 무료)
+  // rds : 전 데이터(users/favorites/notifications + shops/slots/marketing_snapshots/leads).
+  //       Supabase는 전면 이전 완료 — 더 이상 사용하지 않는다.
   const rds = getRdsPool();
-  const sbClient = getSupabaseClient();      // 샵/슬롯/어드민
 
   // ── 캐시 (샵 목록/상세) ──────────────────────────────────────
   // REDIS_URL 있으면 Redis, 없으면 프로세스 내 인메모리(LRU+TTL)로 fallback.
@@ -252,7 +251,7 @@ export function buildDependencies(): AppDependencies {
   );
 
   // ── Admin (env 기반 단일 계정) ───────────────────────────────
-  const adminController = new AdminController(rds, sbClient);
+  const adminController = new AdminController(rds);
   const inquiryController = new InquiryController(rds);
 
   // 빈자리 알림은 스크래퍼(themuselab/syak)가 새 슬롯만 골라

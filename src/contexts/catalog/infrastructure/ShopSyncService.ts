@@ -48,8 +48,18 @@ export class ShopSyncService {
     return n;
   }
 
+  /** 지난 슬롯 정리(비용관리): 소비자에 안 보이는 과거 scraper 슬롯 삭제.
+   *  owner 슬롯은 사장님 히스토리라 보존. 반환: 삭제 행 수. */
+  async purgePastSlots(date: string): Promise<number> {
+    const { rowCount } = await this.rds.query(
+      `DELETE FROM slots WHERE source = 'scraper' AND date < $1::date`, [date],
+    );
+    return rowCount ?? 0;
+  }
+
   /** RDS 슬롯 기준으로 today_open 재계산(전 샵). date/after 이후 열린 샵만 true */
-  async reconcileTodayOpen(date: string, after: string): Promise<{ open: number; changed: number }> {
+  async reconcileTodayOpen(date: string, after: string): Promise<{ open: number; changed: number; purged: number }> {
+    const purged = await this.purgePastSlots(date); // 매 실행마다 과거 scraper 슬롯 정리
     const at = /^\d{2}:\d{2}(:\d{2})?$/.test(after) ? (after.length === 5 ? `${after}:00` : after) : '00:00:00';
     const { rows } = await this.rds.query(
       `WITH open AS (
@@ -66,6 +76,6 @@ export class ShopSyncService {
        SELECT (SELECT count(*) FROM open)::int AS open, (SELECT count(*) FROM upd)::int AS changed`,
       [date, at],
     );
-    return { open: rows[0].open, changed: rows[0].changed };
+    return { open: rows[0].open, changed: rows[0].changed, purged };
   }
 }

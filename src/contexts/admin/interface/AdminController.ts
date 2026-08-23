@@ -1,13 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { Pool } from 'pg';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { Errors } from '../../../shared/errors/AppError';
 import { initAdminSSE, AdminSSEService } from '../infrastructure/AdminSSEService';
 import {
-  generateMarketingImages as runImageGeneration, ImageGenConfigError,
-  MARKETING_BUCKET, MarketingImage,
+  generateMarketingImages as runImageGeneration, ImageGenConfigError, MarketingImage,
 } from '../infrastructure/MarketingImageService';
+import { s3Delete, s3PresignGet } from '../infrastructure/S3Service';
 import { replyToThread, publishThread, generateThreadsDraft, ThreadsConfigError } from '../infrastructure/ThreadsPublishService';
 import {
   ga4Overview, ga4TopShops, ga4EventCount, ga4Acquisition,
@@ -74,9 +73,8 @@ export class AdminController {
 
   constructor(
     private readonly rds: Pool,
-    private readonly sbClient: SupabaseClient,
   ) {
-    this.sse = initAdminSSE(rds, sbClient);
+    this.sse = initAdminSSE(rds);
   }
 
   // ── 통계 인메모리 캐시 ────────────────────────────────────────
@@ -819,7 +817,7 @@ export class AdminController {
   generateMarketingImages = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const count = Math.min(Math.max(parseInt(String(req.body?.count ?? 5), 10) || 5, 1), 10);
-      const result = await runImageGeneration(this.sbClient, count);
+      const result = await runImageGeneration(this.rds, count);
       res.json(result);
     } catch (err) {
       // 키·레시피 누락은 운영자가 고칠 문제라 원인을 그대로 보여준다
@@ -841,7 +839,7 @@ export class AdminController {
         res.status(400).json({ code: 'VALIDATION_ERROR', message: 'replyToId와 text가 필요합니다' });
         return;
       }
-      const result = await replyToThread(this.sbClient, String(replyToId), String(text).trim());
+      const result = await replyToThread(this.rds, String(replyToId), String(text).trim());
       res.status(201).json(result);
     } catch (err) {
       if (err instanceof ThreadsConfigError) {
@@ -930,7 +928,7 @@ export class AdminController {
         res.status(400).json({ code: 'VALIDATION_ERROR', message: 'topic이 필요합니다' });
         return;
       }
-      const result = await generateThreadsDraft(this.sbClient, String(topic).trim());
+      const result = await generateThreadsDraft(this.rds, String(topic).trim());
       res.json(result);
     } catch (err) {
       if (err instanceof ThreadsConfigError) {
@@ -949,7 +947,7 @@ export class AdminController {
         res.status(400).json({ code: 'VALIDATION_ERROR', message: 'text가 필요합니다' });
         return;
       }
-      const result = await publishThread(this.sbClient, String(text).trim());
+      const result = await publishThread(this.rds, String(text).trim());
       res.status(201).json(result);
     } catch (err) {
       if (err instanceof ThreadsConfigError) {
@@ -970,41 +968,46 @@ export class AdminController {
         return;
       }
 
-      const { data: rows, error } = await this.sbClient
-        .from('marketing_snapshots')
-        .select('snapshot_date, data')
-        .eq('snapshot_date', date)
-        .limit(1);
-      if (error) throw error;
-
-      const row = (rows ?? [])[0] as { snapshot_date: string; data: MarketingSnapshotData } | undefined;
-      const images = row?.data?.images ?? [];
+      const { rows } = await this.rds.query(
+        `SELECT data FROM marketing_snapshots WHERE snapshot_date = $1 LIMIT 1`, [date],
+      );
+      const data = (rows[0]?.data ?? {}) as MarketingSnapshotData;
+      const images = data.images ?? [];
       const target = images.find(im => im.id === imageId);
       if (!target) {
         res.status(404).json({ code: 'NOT_FOUND', message: '이미지를 찾을 수 없습니다' });
         return;
       }
 
-      // 공개 URL → 버킷 내부 경로 (`2026-07-10/1.jpg`)
-      const marker = `/storage/v1/object/public/${MARKETING_BUCKET}/`;
+      // S3 키 추출 (신규: /api/v1/marketing/img/<key>). 레거시 Supabase URL은 스토리지 삭제 스킵.
+      const marker = '/marketing/img/';
       const at = target.url.indexOf(marker);
       if (at >= 0) {
-        const path = decodeURIComponent(target.url.slice(at + marker.length));
-        const { error: rmErr } = await this.sbClient.storage.from(MARKETING_BUCKET).remove([path]);
-        // 스토리지에서 이미 사라진 경우에도 목록에서는 지워야 하므로 실패해도 계속 진행한다.
-        if (rmErr) console.error('[deleteMarketingImage] storage', rmErr.message, path);
+        const key = decodeURIComponent(target.url.slice(at + marker.length));
+        await s3Delete(key).catch(e => console.error('[deleteMarketingImage] s3', (e as Error).message, key));
       }
 
-      const nextData: MarketingSnapshotData = { ...row!.data, images: images.filter(im => im.id !== imageId) };
-      const { error: upErr } = await this.sbClient
-        .from('marketing_snapshots')
-        .update({ data: nextData, updated_at: new Date().toISOString() })
-        .eq('snapshot_date', date);
-      if (upErr) throw upErr;
+      const nextData: MarketingSnapshotData = { ...data, images: images.filter(im => im.id !== imageId) };
+      await this.rds.query(
+        `UPDATE marketing_snapshots SET data = $2::jsonb, updated_at = now() WHERE snapshot_date = $1`,
+        [date, JSON.stringify(nextData)],
+      );
 
       res.json({ ok: true, id: imageId, remaining: nextData.images!.length });
     } catch (err) {
       next(err);
+    }
+  };
+
+  // ── 마케팅 이미지 서빙 (S3 presigned로 302 리다이렉트, 공개) ──
+  marketingImg = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const key = `${req.params.date}/${req.params.file}`;
+      if (!/^\d{4}-\d{2}-\d{2}\/[\w.-]+$/.test(key)) { res.status(400).end(); return; }
+      const url = await s3PresignGet(key, 3600);
+      res.redirect(302, url);
+    } catch {
+      res.status(404).end();
     }
   };
 

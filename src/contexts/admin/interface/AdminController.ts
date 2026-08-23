@@ -207,45 +207,20 @@ export class AdminController {
       if (!body.name || !body.placeId)
         return next(Errors.validation({ name: 'name, placeId는 필수입니다' }));
 
-      // Supabase에 플레이스 ID로 샵이 있는지 확인
-      const { data: existing } = await this.sbClient
-        .from('shops')
-        .select('id')
-        .eq('naver_place_id', body.placeId)
-        .single();
-
-      let shopId: string;
-      if (existing) {
-        shopId = (existing as { id: string }).id;
-        // 정보 갱신
-        await this.sbClient.from('shops').update({
-          name: body.name,
-          road_address: body.address,
-          gu: body.gu,
-          categories: body.category ? [body.category] : undefined,
-          category: body.category,
-          representative_image: body.imageUrl || undefined,
-        }).eq('id', shopId);
-      } else {
-        // 새 샵 등록
-        const { data: newShop, error } = await this.sbClient
-          .from('shops')
-          .insert({
-            naver_place_id:       body.placeId,
-            name:                 body.name,
-            road_address:         body.address ?? '',
-            gu:                   body.gu ?? '',
-            category:             body.category ?? '',
-            categories:           body.category ? [body.category] : [],
-            representative_image: body.imageUrl || null,
-            today_open:           false,
-            is_partner:           false,
-          })
-          .select('id')
-          .single();
-        if (error) throw error;
-        shopId = (newShop as { id: string }).id;
-      }
+      // 샵 id = 네이버 place id (RDS). 있으면 갱신, 없으면 생성. 주소는 detail.roadAddress.
+      const shopId = body.placeId;
+      const cats = body.category ? [body.category] : [];
+      await this.rds.query(
+        `INSERT INTO shops (id, name, gu, category, categories, representative_image, detail, today_open, is_partner)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6, jsonb_build_object('roadAddress', $7::text), false, false)
+         ON CONFLICT (id) DO UPDATE SET
+           name = EXCLUDED.name, gu = EXCLUDED.gu, category = EXCLUDED.category,
+           categories = EXCLUDED.categories,
+           representative_image = COALESCE(EXCLUDED.representative_image, shops.representative_image),
+           detail = COALESCE(shops.detail, '{}'::jsonb) || jsonb_build_object('roadAddress', $7::text)`,
+        [shopId, body.name, body.gu ?? '', body.category ?? '', JSON.stringify(cats),
+         body.imageUrl || null, body.address ?? ''],
+      );
 
       const code = await this._issueCode(shopId);
       void this.sse.pushNow();
@@ -276,15 +251,10 @@ export class AdminController {
     try {
       // 파트너샵(is_partner=true)은 소수라 detail->>phone을 한 번에 뽑아도 안전(detoast/timeout은
       // 45k 전체 정렬에서만 문제 — listAllShops는 2단계로 회피). 1000행 한도만 넘겨 수집.
-      type Row = { id: string; name: string; gu: string | null; category: string | null;
-        today_open: boolean | null; representative_image: string | null;
-        partner_synced_at: string | null; pilot_coupon: string | null; phone: string | null };
-      const shops = await fetchAllRows<Row>(
-        (from, to) => this.sbClient.from('shops')
-          .select('id, name, gu, category, today_open, representative_image, partner_synced_at, pilot_coupon, detail->>phone')
-          .eq('is_partner', true)
-          .order('partner_synced_at', { ascending: false })
-          .range(from, to),
+      const { rows: shops } = await this.rds.query(
+        `SELECT id, name, gu, category, today_open, representative_image, partner_synced_at, pilot_coupon,
+                detail->>'phone' AS phone
+         FROM shops WHERE is_partner = true ORDER BY partner_synced_at DESC NULLS LAST`,
       );
 
       const result = shops.map(s => ({
@@ -337,13 +307,11 @@ export class AdminController {
 
     // 2) 해당 gu의 샘플 주소 몇 건을 읽어 첫 토큰에서 파생
     try {
-      const { data } = await this.sbClient
-        .from('shops')
-        .select('detail->>roadAddress')
-        .eq('gu', gu)
-        .limit(5);
-      for (const r of (data ?? []) as { roadAddress: string | null }[]) {
-        const hit = AdminController.matchSido(r.roadAddress?.trim().split(/\s+/)[0]);
+      const { rows } = await this.rds.query(
+        `SELECT detail->>'roadAddress' AS road_address FROM shops WHERE gu = $1 LIMIT 5`, [gu],
+      );
+      for (const r of rows as { road_address: string | null }[]) {
+        const hit = AdminController.matchSido(r.road_address?.trim().split(/\s+/)[0]);
         if (hit) return hit;
       }
     } catch { /* 샘플 실패 시 아래 폴백 */ }
@@ -361,8 +329,8 @@ export class AdminController {
       }
 
       // 1) 카테고리 · 시군구 수집 (가벼운 컬럼만, detail 미접근)
-      const shopRows = await fetchAllRows<{ category: string | null; gu: string | null }>(
-        (from, to) => this.sbClient.from('shops').select('category, gu').range(from, to),
+      const { rows: shopRows } = await this.rds.query<{ category: string | null; gu: string | null }>(
+        `SELECT DISTINCT category, gu FROM shops`,
       );
       const cats = new Set<string>();
       const gus  = new Set<string>();
@@ -426,39 +394,31 @@ export class AdminController {
       // ⚠️ detail(JSONB)은 menus/reviews/images를 품은 대용량 컬럼이다.
       //    4만 행을 정렬하면서 detail->>phone 을 함께 뽑으면 statement timeout(57014) 발생.
       //    → 1단계: 가벼운 목록 조회 / 2단계: 그 페이지의 id에 대해서만 전화번호·주소 조회
-      let q = this.sbClient
-        .from('shops')
-        .select('id, name, gu, category, today_open, representative_image, is_partner', { count: 'exact' });
-
-      if (search)   q = q.ilike('name', `%${search}%`);
-      if (category) q = q.eq('category', category);
+      const cond: string[] = [];
+      const params: unknown[] = [];
+      const add = (v: unknown) => { params.push(v); return `$${params.length}`; };
+      if (search)   cond.push(`name ILIKE ${add(`%${search}%`)}`);
+      if (category) cond.push(`category = ${add(category)}`);
       if (gu) {
-        q = q.eq('gu', gu);                       // 시군구까지 선택
+        cond.push(`gu = ${add(gu)}`);
       } else if (sido) {
-        const list = await this.gusOfSido(sido);  // 시/도만 선택 → 소속 시군구 전체
+        const list = await this.gusOfSido(sido);
         if (!list.length) { res.json({ shops: [], total: 0, page, limit }); return; }
-        q = q.in('gu', list);
+        cond.push(`gu = ANY(${add(list)}::text[])`);
       }
-      q = q.order(sort, { ascending }).range(offset, offset + limit - 1);
+      const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
+      const orderCol = (['name', 'gu', 'category'] as string[]).includes(sort) ? sort : 'name';
+      const dir = ascending ? 'ASC' : 'DESC';
 
-      const { data, count, error } = await q;
-      if (error) throw error;
-
-      const rows = (data ?? []) as { id: string; [k: string]: unknown }[];
-      const ids = rows.map(r => r.id);
-
-      const detailMap = new Map<string, { phone?: string | null; roadAddress?: string | null }>();
-      if (ids.length) {
-        const { data: det, error: detErr } = await this.sbClient
-          .from('shops')
-          .select('id, detail->>phone, detail->>roadAddress')
-          .in('id', ids);
-        if (detErr) console.error('[listAllShops detail]', detErr.message);
-        for (const d of (det ?? []) as { id: string; phone: string | null; roadAddress: string | null }[]) {
-          detailMap.set(d.id, { phone: d.phone, roadAddress: d.roadAddress });
-        }
-      }
-
+      const { rows } = await this.rds.query(
+        `SELECT id, name, gu, category, today_open, representative_image, is_partner,
+                detail->>'phone' AS phone, detail->>'roadAddress' AS road_address,
+                COUNT(*) OVER() AS total_count
+         FROM shops ${where} ORDER BY ${orderCol} ${dir} NULLS LAST
+         LIMIT ${add(limit)} OFFSET ${add(offset)}`,
+        params,
+      );
+      const total = rows.length ? Number(rows[0].total_count) : 0;
       const shops = rows.map(s => ({
         shopId:       s.id,
         name:         (s.name as string) ?? null,
@@ -467,11 +427,11 @@ export class AdminController {
         todayOpen:    (s.today_open as boolean) ?? false,
         thumbnailUrl: (s.representative_image as string) ?? null,
         isPartner:    (s.is_partner as boolean) ?? false,
-        address:      detailMap.get(s.id)?.roadAddress ?? null,
-        phone:        detailMap.get(s.id)?.phone ?? null,
+        address:      (s.road_address as string) ?? null,
+        phone:        (s.phone as string) ?? null,
         naverReservationUrl: null,
       }));
-      res.json({ shops, total: count ?? 0, page, limit });
+      res.json({ shops, total, page, limit });
     } catch (err) { next(err); }
   };
 
@@ -549,21 +509,15 @@ export class AdminController {
         ? parseInt(req.query.period as string, 10) : 7;
       const result = await this.cachedStats(`cancelReq:${period}`, async () => {
         const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString();
-        const leads = await fetchAllRows<{ created_at: string }>(
-          (from, to) => this.sbClient.from('leads').select('created_at')
-            .eq('kind', 'missed_seat_alert').gte('created_at', since).range(from, to),
+        const { rows } = await this.rds.query(
+          `SELECT to_char((created_at AT TIME ZONE 'Asia/Seoul')::date, 'YYYY-MM-DD') AS date, COUNT(*)::int AS count
+           FROM leads WHERE kind = 'missed_seat_alert' AND created_at >= $1
+           GROUP BY 1 ORDER BY 1`,
+          [since],
         );
-
-        const dailyCounts = new Map<string, number>();
-        for (const l of leads) {
-          const date = (l.created_at as string).slice(0, 10);
-          dailyCounts.set(date, (dailyCounts.get(date) ?? 0) + 1);
-        }
-        const daily = [...dailyCounts.entries()]
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([date, count]) => ({ date, count: String(count) }));
-
-        return { period: `${period}d`, daily, total: leads.length };
+        const daily = rows.map(r => ({ date: r.date as string, count: String(r.count) }));
+        const total = rows.reduce((a, r) => a + Number(r.count), 0);
+        return { period: `${period}d`, daily, total };
       });
       res.json(result);
     } catch (err) { next(err); }
@@ -646,21 +600,14 @@ export class AdminController {
         req.body as Record<string, string | undefined>;
       if (!name || !gu || !category)
         return next(Errors.validation({ name: 'name, gu, category는 필수입니다' }));
-      const { data, error } = await this.sbClient
-        .from('shops')
-        .insert({
-          name,
-          gu,
-          category,
-          categories:             [category],
-          road_address:           address ?? null,
-          is_partner:             true,
-          today_open:             false,
-        })
-        .select('id, name, gu, category, is_partner')
-        .single();
-      if (error) throw error;
-      res.status(201).json({ shopId: (data as Record<string, unknown>).id, ...data });
+      const id = crypto.randomUUID();
+      void phone; void thumbnailUrl; void naverReservationUrl;
+      await this.rds.query(
+        `INSERT INTO shops (id, name, gu, category, categories, detail, is_partner, today_open)
+         VALUES ($1, $2, $3, $4, $5::jsonb, jsonb_build_object('roadAddress', $6::text), true, false)`,
+        [id, name, gu, category, JSON.stringify([category]), address ?? ''],
+      );
+      res.status(201).json({ shopId: id, id, name, gu, category, is_partner: true });
     } catch (err) { next(err); }
   };
 
@@ -668,21 +615,22 @@ export class AdminController {
   updateShop = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const body = req.body as Record<string, unknown>;
-      const update: Record<string, unknown> = {};
-      if (body.name     !== undefined) update.name     = body.name;
-      if (body.gu       !== undefined) update.gu       = body.gu;
-      if (body.category !== undefined) { update.category = body.category; update.categories = [body.category]; }
-      if (body.address  !== undefined) update.road_address = body.address;
-      if (body.isPartner !== undefined) update.is_partner = body.isPartner;
+      const sets: string[] = [];
+      const params: unknown[] = [req.params.shopId];
+      const add = (v: unknown) => { params.push(v); return `$${params.length}`; };
+      if (body.name     !== undefined) sets.push(`name = ${add(body.name)}`);
+      if (body.gu       !== undefined) sets.push(`gu = ${add(body.gu)}`);
+      if (body.category !== undefined) {
+        sets.push(`category = ${add(body.category)}`);
+        sets.push(`categories = ${add(JSON.stringify([body.category]))}::jsonb`);
+      }
+      if (body.isPartner !== undefined) sets.push(`is_partner = ${add(body.isPartner)}`);
+      if (body.address  !== undefined) {
+        sets.push(`detail = COALESCE(detail, '{}'::jsonb) || jsonb_build_object('roadAddress', ${add(String(body.address))}::text)`);
+      }
+      if (!sets.length) return next(Errors.validation({ fields: '변경할 필드가 없습니다' }));
 
-      if (!Object.keys(update).length)
-        return next(Errors.validation({ fields: '변경할 필드가 없습니다' }));
-
-      const { error } = await this.sbClient
-        .from('shops')
-        .update(update)
-        .eq('id', req.params.shopId);
-      if (error) throw error;
+      await this.rds.query(`UPDATE shops SET ${sets.join(', ')} WHERE id = $1`, params);
       res.json({ ok: true });
     } catch (err) { next(err); }
   };
@@ -690,11 +638,7 @@ export class AdminController {
   // ── 파트너샵 삭제 ────────────────────────────────────────────
   deleteShop = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { error } = await this.sbClient
-        .from('shops')
-        .delete()
-        .eq('id', req.params.shopId);
-      if (error) throw error;
+      await this.rds.query(`DELETE FROM shops WHERE id = $1`, [req.params.shopId]);
       res.status(204).send();
     } catch (err) { next(err); }
   };
@@ -702,13 +646,11 @@ export class AdminController {
   // ── 마케팅 스냅샷: 날짜 목록 ─────────────────────────────────
   listMarketingDates = async (_req: Request, res: Response): Promise<void> => {
     try {
-      const { data, error } = await this.sbClient
-        .from('marketing_snapshots')
-        .select('snapshot_date')
-        .order('snapshot_date', { ascending: false })
-        .limit(180);
-      if (error) throw error;
-      res.json({ dates: (data ?? []).map(r => (r as { snapshot_date: string }).snapshot_date) });
+      const { rows } = await this.rds.query(
+        `SELECT to_char(snapshot_date, 'YYYY-MM-DD') AS d FROM marketing_snapshots
+         ORDER BY snapshot_date DESC LIMIT 180`,
+      );
+      res.json({ dates: rows.map(r => r.d as string) });
     } catch (err) {
       // 테이블 미생성/빈 상태에서도 관리자 화면이 죽지 않도록 빈 응답
       console.error('[listMarketingDates]', (err as Error).message);
@@ -808,12 +750,13 @@ export class AdminController {
         this.rds.query(`SELECT COUNT(*) AS cnt FROM users WHERE created_at >= $1 AND created_at < $2`, [start, end]),
         this.rds.query(`SELECT COUNT(*) AS cnt FROM shop_inquiries WHERE created_at >= $1 AND created_at < $2`, [start, end]),
         this.rds.query(`SELECT COUNT(*) AS cnt FROM shop_inquiries WHERE status = 'pending'`),
-        this.sbClient.from('marketing_snapshots').select('snapshot_date, data')
-          .order('snapshot_date', { ascending: false }).limit(1),
+        this.rds.query(`SELECT to_char(snapshot_date,'YYYY-MM-DD') AS snapshot_date, data
+                        FROM marketing_snapshots ORDER BY snapshot_date DESC LIMIT 1`)
+          .catch(() => ({ rows: [] as Record<string, unknown>[] })),
         this.computePartnerEngagement('yesterday', 'yesterday').catch(() => null),
       ]);
 
-      const snap = (mktRes.data ?? [])[0] as { snapshot_date: string; data: MarketingSnapshotData } | undefined;
+      const snap = mktRes.rows[0] as { snapshot_date: string; data: MarketingSnapshotData } | undefined;
       const marketing = snap
         ? {
             date: snap.snapshot_date,
@@ -842,14 +785,11 @@ export class AdminController {
   listMarketingTrend = async (req: Request, res: Response): Promise<void> => {
     try {
       const days = Math.min(Math.max(parseInt((req.query.days as string) ?? '30', 10) || 30, 1), 180);
-      const { data, error } = await this.sbClient
-        .from('marketing_snapshots')
-        .select('snapshot_date, data')
-        .order('snapshot_date', { ascending: false })
-        .limit(days);
-      if (error) throw error;
-      const snapshots = ((data ?? []) as { snapshot_date: string; data: unknown }[])
-        .map(r => ({ date: r.snapshot_date, data: r.data }))
+      const { rows } = await this.rds.query(
+        `SELECT to_char(snapshot_date, 'YYYY-MM-DD') AS date, data FROM marketing_snapshots
+         ORDER BY snapshot_date DESC LIMIT $1`, [days],
+      );
+      const snapshots = rows.map(r => ({ date: r.date as string, data: r.data }))
         .reverse(); // 오래된 → 최신 (차트 x축 순서)
       res.json({ snapshots });
     } catch (err) {
@@ -862,20 +802,13 @@ export class AdminController {
   getMarketing = async (req: Request, res: Response): Promise<void> => {
     try {
       const date = req.query.date as string | undefined;
-      let q = this.sbClient
-        .from('marketing_snapshots')
-        .select('snapshot_date, data')
-        .order('snapshot_date', { ascending: false })
-        .limit(1);
-      if (date) q = this.sbClient
-        .from('marketing_snapshots')
-        .select('snapshot_date, data')
-        .eq('snapshot_date', date)
-        .limit(1);
-      const { data, error } = await q;
-      if (error) throw error;
-      const row = (data ?? [])[0] as { snapshot_date: string; data: unknown } | undefined;
-      res.json({ date: row?.snapshot_date ?? null, data: row?.data ?? null });
+      const { rows } = date
+        ? await this.rds.query(
+            `SELECT to_char(snapshot_date,'YYYY-MM-DD') AS date, data FROM marketing_snapshots WHERE snapshot_date = $1 LIMIT 1`, [date])
+        : await this.rds.query(
+            `SELECT to_char(snapshot_date,'YYYY-MM-DD') AS date, data FROM marketing_snapshots ORDER BY snapshot_date DESC LIMIT 1`);
+      const row = rows[0] as { date: string; data: unknown } | undefined;
+      res.json({ date: row?.date ?? null, data: row?.data ?? null });
     } catch (err) {
       console.error('[getMarketing]', (err as Error).message);
       res.json({ date: null, data: null });

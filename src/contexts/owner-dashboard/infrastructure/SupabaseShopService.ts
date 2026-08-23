@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { Pool } from 'pg';
 import { IShopInfoProvider } from '../../owner-slots/ports/IOwnerSlotRepository';
 
 export interface ShopInfo {
@@ -10,28 +10,27 @@ export interface ShopInfo {
 }
 
 /**
- * 샵 정보(Supabase). 알림용 기본정보(IShopInfoProvider) + 매장정보 조회/수정.
- * Supabase 정지(402) 시 예외를 던지므로 호출측에서 graceful 처리한다.
+ * 샵 정보(RDS). 알림용 기본정보(IShopInfoProvider) + 매장정보 조회/수정.
+ * (Supabase 이전 — 이름은 유지하되 내부는 RDS. 주소는 detail.roadAddress, 시술항목은 detail.owner_service_items)
  */
 export class SupabaseShopService implements IShopInfoProvider {
-  constructor(private readonly sb: SupabaseClient) {}
+  constructor(private readonly rds: Pool) {}
 
   async getBasic(shopId: string): Promise<{ name: string; lat: number | null; lng: number | null } | null> {
-    const { data, error } = await this.sb.from('shops').select('name, lat, lng').eq('id', shopId).single();
-    if (error || !data) return null;
-    return { name: String(data.name ?? '내 매장'), lat: data.lat ?? null, lng: data.lng ?? null };
+    const { rows } = await this.rds.query('SELECT name, lat, lng FROM shops WHERE id = $1', [shopId]);
+    if (!rows[0]) return null;
+    return { name: String(rows[0].name ?? '내 매장'), lat: rows[0].lat ?? null, lng: rows[0].lng ?? null };
   }
 
   async getInfo(shopId: string): Promise<ShopInfo> {
-    const { data, error } = await this.sb
-      .from('shops').select('id, name, road_address, category, detail').eq('id', shopId).single();
-    if (error || !data) throw new Error(error?.message ?? 'shop not found');
-    const detail = (data.detail ?? {}) as Record<string, unknown>;
+    const { rows } = await this.rds.query('SELECT id, name, category, detail FROM shops WHERE id = $1', [shopId]);
+    if (!rows[0]) throw new Error('shop not found');
+    const detail = (rows[0].detail ?? {}) as Record<string, unknown>;
     return {
-      shopId: data.id as string,
-      name: String(data.name ?? ''),
-      address: String((data.road_address as string) ?? ''),
-      category: (data.category as string) ?? null,
+      shopId: rows[0].id as string,
+      name: String(rows[0].name ?? ''),
+      address: String((detail.roadAddress as string) ?? ''),
+      category: (rows[0].category as string) ?? null,
       serviceItems: Array.isArray(detail.owner_service_items) ? (detail.owner_service_items as string[]) : [],
     };
   }
@@ -40,20 +39,17 @@ export class SupabaseShopService implements IShopInfoProvider {
     shopId: string,
     patch: { name?: string; address?: string; serviceItems?: string[] },
   ): Promise<ShopInfo> {
-    // detail JSONB 병합을 위해 현재 detail을 읽어온다
-    const { data: cur, error: readErr } = await this.sb.from('shops').select('detail').eq('id', shopId).single();
-    if (readErr) throw new Error(readErr.message);
-    const detail = { ...(cur?.detail ?? {}) } as Record<string, unknown>;
+    const { rows: cur } = await this.rds.query('SELECT detail FROM shops WHERE id = $1', [shopId]);
+    if (!cur[0]) throw new Error('shop not found');
+    const detail = { ...((cur[0].detail ?? {}) as Record<string, unknown>) };
+    if (patch.address !== undefined) detail.roadAddress = patch.address.trim();
     if (patch.serviceItems !== undefined) {
       detail.owner_service_items = patch.serviceItems.map(s => s.trim()).filter(Boolean).slice(0, 20);
     }
-
-    const upd: Record<string, unknown> = { detail };
-    if (patch.name !== undefined) upd.name = patch.name.trim();
-    if (patch.address !== undefined) upd.road_address = patch.address.trim();
-
-    const { error } = await this.sb.from('shops').update(upd).eq('id', shopId);
-    if (error) throw new Error(error.message);
+    const sets: string[] = ['detail = $2::jsonb'];
+    const params: unknown[] = [shopId, JSON.stringify(detail)];
+    if (patch.name !== undefined) { params.push(patch.name.trim()); sets.push(`name = $${params.length}`); }
+    await this.rds.query(`UPDATE shops SET ${sets.join(', ')} WHERE id = $1`, params);
     return this.getInfo(shopId);
   }
 }

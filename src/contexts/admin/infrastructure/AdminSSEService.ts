@@ -81,14 +81,14 @@ export class AdminSSEService {
     const [
       { rows: uRows },
       { rows: oRows },
-      partnerRes,
+      { rows: pRows },
       { rows: cRows },
       views7d,
       { rows: iRows },
     ] = await Promise.all([
       this.rds.query(`SELECT COUNT(*) AS cnt FROM users`),
       this.rds.query(`SELECT COUNT(*) AS cnt FROM owner_accounts`),
-      this.sb.from('shops').select('id', { count: 'exact', head: true }).eq('is_partner', true),
+      this.rds.query(`SELECT COUNT(*) AS cnt FROM shops WHERE is_partner = true`),
       this.rds.query(`SELECT COUNT(*) AS cnt FROM partner_codes WHERE used = FALSE AND expires_at > NOW()`),
       this.getViews7d(), // GA4 shop_view 7일 (5분 캐시)
       // 종 알림용: 검토 대기 중인 도입 문의
@@ -98,7 +98,7 @@ export class AdminSSEService {
     return {
       users:        parseInt(uRows[0].cnt as string, 10),
       owners:       parseInt(oRows[0].cnt as string, 10),
-      partnerShops: partnerRes.count ?? 0,
+      partnerShops: parseInt(pRows[0].cnt as string, 10),
       views7d:      views7d,
       openCodes:    parseInt(cRows[0].cnt as string, 10),
       pendingInquiries: parseInt(iRows[0].cnt as string, 10),

@@ -230,7 +230,7 @@ export function buildDependencies(): AppDependencies {
 
   // ── Owner Dashboard 인프라 (RDS 집계 + Supabase 샵 + 활동알림) ─
   const ownerDashRepo = new PgOwnerDashboardRepository(rds);
-  const shopInfoService = new SupabaseShopService(sbClient);
+  const shopInfoService = new SupabaseShopService(rds);
   const slotNotifier = new DispatchSlotNotifier(dispatchUseCase);
 
   // ── Owner Slots (RDS — 사장님 등록 슬롯 CRUD + 알림 발송) ──────

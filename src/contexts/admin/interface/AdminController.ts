@@ -53,16 +53,20 @@ async function fetchAllRows<T>(
   return all;
 }
 
-/** 여러 shopId에 대한 Supabase 샵 정보를 한 번에 가져오는 헬퍼 */
+/** 여러 shopId에 대한 샵 정보를 한 번에 가져오는 헬퍼 (RDS) */
 async function fetchShopMap(
-  sb: SupabaseClient,
+  rds: Pool,
   shopIds: string[],
   cols = 'id, name, gu, category',
 ): Promise<Map<string, Record<string, unknown>>> {
   if (!shopIds.length) return new Map();
-  const { data, error } = await sb.from('shops').select(cols).in('id', shopIds);
-  if (error) console.error('[fetchShopMap] error', error.message, { shopIds: shopIds.slice(0, 3), cols });
-  return new Map(((data ?? []) as unknown as Record<string, unknown>[]).map(s => [s.id as string, s]));
+  try {
+    const { rows } = await rds.query(`SELECT ${cols} FROM shops WHERE id = ANY($1::text[])`, [shopIds]);
+    return new Map(rows.map(s => [s.id as string, s as Record<string, unknown>]));
+  } catch (err) {
+    console.error('[fetchShopMap] error', (err as Error).message, { shopIds: shopIds.slice(0, 3), cols });
+    return new Map();
+  }
 }
 
 export class AdminController {
@@ -126,7 +130,7 @@ export class AdminController {
         FROM owner_accounts ORDER BY created_at DESC LIMIT 200
       `);
       const shopIds = rows.map(o => o.shop_id).filter(Boolean) as string[];
-      const shopMap = await fetchShopMap(this.sbClient, shopIds, 'id, name, gu');
+      const shopMap = await fetchShopMap(this.rds, shopIds, 'id, name, gu');
       const owners = rows.map(o => ({
         id:           o.id,
         nickname:     o.nickname,
@@ -502,7 +506,7 @@ export class AdminController {
           ga4EventCount('shop_view', period),
           ga4DistinctShops('shop_view', period),
         ]);
-        const shopMap = await fetchShopMap(this.sbClient, top.map(t => t.shopId), 'id, name, gu');
+        const shopMap = await fetchShopMap(this.rds, top.map(t => t.shopId), 'id, name, gu');
         const stats = top.map(t => ({
           shopId: t.shopId,
           shopName: (shopMap.get(t.shopId)?.name as string) ?? null,
@@ -594,7 +598,7 @@ export class AdminController {
         ? parseInt(req.query.period as string, 10) : 7;
       const result = await this.cachedStats(`reserveClicks:${period}`, async () => {
         const top = await ga4TopShops('reserve_click', period, 20);
-        const shopMap = await fetchShopMap(this.sbClient, top.map(t => t.shopId), 'id, name, gu');
+        const shopMap = await fetchShopMap(this.rds, top.map(t => t.shopId), 'id, name, gu');
         const stats = top.map(t => ({
           shopId: t.shopId,
           shopName: (shopMap.get(t.shopId)?.name as string) ?? null,
@@ -940,7 +944,7 @@ export class AdminController {
       const days = Math.min(Math.max(parseInt(String(req.query.days ?? '30'), 10) || 30, 1), 365);
       const stats = await this.cachedStats(`ga4:shopViews:${days}`, async () => {
         const rows = await ga4TopShops('shop_view', days, 20);
-        const shopMap = await fetchShopMap(this.sbClient, rows.map(r => r.shopId), 'id, name, gu');
+        const shopMap = await fetchShopMap(this.rds, rows.map(r => r.shopId), 'id, name, gu');
         return rows.map(r => ({
           shopId: r.shopId,
           shopName: (shopMap.get(r.shopId)?.name as string) ?? null,
@@ -961,7 +965,7 @@ export class AdminController {
           ga4TopShops('reserve_click', days, 20),
           ga4EventCount('reserve_click', days),
         ]);
-        const shopMap = await fetchShopMap(this.sbClient, rows.map(r => r.shopId), 'id, name, gu');
+        const shopMap = await fetchShopMap(this.rds, rows.map(r => r.shopId), 'id, name, gu');
         return {
           total,
           stats: rows.map(r => ({

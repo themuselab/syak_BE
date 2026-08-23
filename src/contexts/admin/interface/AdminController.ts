@@ -1011,6 +1011,26 @@ export class AdminController {
     }
   };
 
+  // ── 내부: 마케팅 스냅샷 upsert (marketing-report 스킬용, X-Internal-Key) ──
+  internalMarketingSnapshot = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { date, data } = req.body ?? {};
+      if (!data || typeof data !== 'object') {
+        res.status(400).json({ code: 'VALIDATION_ERROR', message: 'data(JSON)가 필요합니다' });
+        return;
+      }
+      const d = /^\d{4}-\d{2}-\d{2}$/.test(String(date))
+        ? date : new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+      await this.rds.query(
+        `INSERT INTO marketing_snapshots (snapshot_date, data, updated_at)
+         VALUES ($1, $2::jsonb, now())
+         ON CONFLICT (snapshot_date) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
+        [d, JSON.stringify(data)],
+      );
+      res.json({ ok: true, date: d });
+    } catch (err) { next(err); }
+  };
+
   // ── 범용 이미지 프록시 (S3 presigned 302, 공개) — 샵 사진 등 ──
   imgProxy = async (req: Request, res: Response): Promise<void> => {
     try {

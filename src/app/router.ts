@@ -39,6 +39,7 @@ export function buildRouter(controllers: Controllers): Router {
   router.get('/internal/shops/meta',     requireInternalKey, controllers.shopInternal.meta);      // 알림용 샵 메타
   router.post('/internal/shops/summary', requireInternalKey, controllers.shopInternal.summary);   // slot_summary
   router.post('/internal/shops/reconcile-today-open', requireInternalKey, controllers.shopInternal.reconcileTodayOpen);
+  router.post('/internal/marketing/snapshot', requireInternalKey, controllers.admin.internalMarketingSnapshot); // 마케팅 스킬
 
   return router;
 }

@@ -7,6 +7,7 @@ import { favoriteRouter } from '../contexts/favorite/interface/favorite.routes';
 import { notificationRouter } from '../contexts/notification/interface/notification.routes';
 import { userRouter } from '../contexts/user/interface/user.routes';
 import { ownerRouter } from '../contexts/owner/interface/owner.routes';
+import { webRouter } from '../contexts/catalog/interface/web.routes';
 import { adminRouter } from '../contexts/admin/interface/admin.routes';
 import { requireInternalKey } from '../shared/middleware/auth.middleware';
 
@@ -22,6 +23,7 @@ export function buildRouter(controllers: Controllers): Router {
   router.use('/notifications', notificationRouter(controllers.notification));
   router.use('/users',         userRouter(controllers.user));
   router.use('/owner',         ownerRouter(controllers.ownerAuth, controllers.ownerSlots, controllers.analytics, controllers.ownerDashboard));
+  router.use('/web',           webRouter(controllers.webCatalog));  // 소비자 웹 raw 카탈로그(RDS)
   router.use('/admin',         adminRouter(controllers.admin));
 
   router.post('/inquiries', controllers.inquiry.submit);  // SO-000a
@@ -31,6 +33,10 @@ export function buildRouter(controllers: Controllers): Router {
   router.get('/internal/partner-engagement', requireInternalKey, controllers.admin.partnerEngagement); // 디코 리포트용
   router.post('/internal/slots/sync', requireInternalKey, controllers.slotSync.handle); // 스크래퍼 → RDS 슬롯 동기화
   router.get('/internal/slots/open-now', requireInternalKey, controllers.slotSync.openNowHandler); // 초록핀 재계산용
+  router.get('/internal/shops/targets',  requireInternalKey, controllers.shopInternal.targets);   // 스크래퍼 타깃
+  router.get('/internal/shops/meta',     requireInternalKey, controllers.shopInternal.meta);      // 알림용 샵 메타
+  router.post('/internal/shops/summary', requireInternalKey, controllers.shopInternal.summary);   // slot_summary
+  router.post('/internal/shops/reconcile-today-open', requireInternalKey, controllers.shopInternal.reconcileTodayOpen);
 
   return router;
 }

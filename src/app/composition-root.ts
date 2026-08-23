@@ -59,6 +59,9 @@ import { PgShopRepository } from '../contexts/catalog/infrastructure/PgShopRepos
 import { GetShopsUseCase } from '../contexts/catalog/application/GetShopsUseCase';
 import { GetShopDetailUseCase } from '../contexts/catalog/application/GetShopDetailUseCase';
 import { CatalogController } from '../contexts/catalog/interface/CatalogController';
+import { WebCatalogController } from '../contexts/catalog/interface/WebCatalogController';
+import { ShopSyncService } from '../contexts/catalog/infrastructure/ShopSyncService';
+import { ShopInternalController } from '../contexts/catalog/interface/ShopInternalController';
 
 // Reservation
 import { PgSlotRepository } from '../contexts/reservation/infrastructure/PgSlotRepository';
@@ -101,6 +104,8 @@ export interface Controllers {
   catalog: CatalogController;
   reservation: ReservationController;
   slotSync: SlotSyncController;
+  webCatalog: WebCatalogController;
+  shopInternal: ShopInternalController;
   favorite: FavoriteController;
   notification: NotificationController;
   user: UserController;
@@ -157,6 +162,8 @@ export function buildDependencies(): AppDependencies {
 
   // ── Catalog (Supabase REST API — 읽기 전용, Redis 캐시) ──────
   const shopRepo = new PgShopRepository(rds, cache);
+  const webCatalogController = new WebCatalogController(rds);
+  const shopInternalController = new ShopInternalController(new ShopSyncService(rds));
   const catalogController = new CatalogController(
     new GetShopsUseCase(shopRepo),
     new GetShopDetailUseCase(shopRepo),
@@ -257,6 +264,8 @@ export function buildDependencies(): AppDependencies {
     catalog: catalogController,
     reservation: reservationController,
     slotSync: slotSyncController,
+    webCatalog: webCatalogController,
+    shopInternal: shopInternalController,
     favorite: favoriteController,
     notification: notificationController,
     user: userController,

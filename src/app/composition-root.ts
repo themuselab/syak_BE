@@ -64,7 +64,10 @@ import { CatalogController } from '../contexts/catalog/interface/CatalogControll
 import { PgSlotRepository } from '../contexts/reservation/infrastructure/PgSlotRepository';
 import { GetShopSlotsUseCase } from '../contexts/reservation/application/GetShopSlotsUseCase';
 import { SearchAvailableSlotsUseCase } from '../contexts/reservation/application/SearchAvailableSlotsUseCase';
+import { SyncScraperSlotsUseCase } from '../contexts/reservation/application/SyncScraperSlotsUseCase';
+import { GetOpenNowShopsUseCase } from '../contexts/reservation/application/GetOpenNowShopsUseCase';
 import { ReservationController } from '../contexts/reservation/interface/ReservationController';
+import { SlotSyncController } from '../contexts/reservation/interface/SlotSyncController';
 
 // Favorite
 import { PgFavoriteRepository } from '../contexts/favorite/infrastructure/PgFavoriteRepository';
@@ -97,6 +100,7 @@ export interface Controllers {
   auth: AuthController;
   catalog: CatalogController;
   reservation: ReservationController;
+  slotSync: SlotSyncController;
   favorite: FavoriteController;
   notification: NotificationController;
   user: UserController;
@@ -161,7 +165,12 @@ export function buildDependencies(): AppDependencies {
   );
 
   // ── Reservation (Supabase REST API — 읽기 전용) ─────────────
-  const slotRepo = new PgSlotRepository(sbClient);
+  // 슬롯은 RDS에서 읽고(egress 회피) + Redis/인메모리 캐시. 샵 이름만 Supabase(캐시).
+  const slotRepo = new PgSlotRepository(rds, sbClient, cache);
+  const slotSyncController = new SlotSyncController(
+    new SyncScraperSlotsUseCase(slotRepo),
+    new GetOpenNowShopsUseCase(slotRepo),
+  );
   const reservationController = new ReservationController(
     new GetShopSlotsUseCase(slotRepo),
     new SearchAvailableSlotsUseCase(slotRepo),
@@ -247,6 +256,7 @@ export function buildDependencies(): AppDependencies {
     auth: authController,
     catalog: catalogController,
     reservation: reservationController,
+    slotSync: slotSyncController,
     favorite: favoriteController,
     notification: notificationController,
     user: userController,

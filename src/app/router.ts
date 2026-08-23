@@ -29,6 +29,8 @@ export function buildRouter(controllers: Controllers): Router {
   // 내부 관리 API (X-Internal-Key 필요, 서버간 통신용)
   router.post('/internal/partner-codes', requireInternalKey, controllers.ownerInternal.createCode);
   router.get('/internal/partner-engagement', requireInternalKey, controllers.admin.partnerEngagement); // 디코 리포트용
+  router.post('/internal/slots/sync', requireInternalKey, controllers.slotSync.handle); // 스크래퍼 → RDS 슬롯 동기화
+  router.get('/internal/slots/open-now', requireInternalKey, controllers.slotSync.openNowHandler); // 초록핀 재계산용
 
   return router;
 }

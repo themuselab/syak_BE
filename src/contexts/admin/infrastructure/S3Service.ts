@@ -4,7 +4,8 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 /**
  * 마케팅 이미지 저장소 (S3, 비공개 버킷). Supabase Storage 대체.
  * 이미지 URL은 백엔드 프록시(/marketing/img/:key)로 서빙 → presigned로 302 리다이렉트.
- * 자격증명: EC2 syak.env의 AWS_ACCESS_KEY_ID/SECRET (S3 권한 포함), region ap-northeast-2.
+ * 자격증명: ECS 태스크 역할(syakTaskRole, S3 권한)에서 SDK 기본 provider chain으로 자동 인식.
+ * (정적 AWS 키 미주입 — 로컬 개발 시엔 env AWS_ACCESS_KEY_ID/SECRET 사용). region ap-northeast-2.
  */
 export class S3ConfigError extends Error {}
 
@@ -16,8 +17,9 @@ function client(): S3Client {
   return _client;
 }
 
+// 버킷만 설정돼 있으면 활성 — 자격증명은 SDK 기본 provider chain(태스크 역할/env/인스턴스 프로파일)이 해결.
 export function s3Configured(): boolean {
-  return !!BUCKET && !!(process.env.AWS_ACCESS_KEY_ID || process.env.AWS_SECRET_ACCESS_KEY);
+  return !!BUCKET;
 }
 
 /** JPEG 업로드 → 백엔드 프록시 URL 반환 (상대경로: /api/v1/marketing/img/<key>) */

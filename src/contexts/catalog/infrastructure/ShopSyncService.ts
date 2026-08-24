@@ -16,6 +16,29 @@ export class ShopSyncService {
     return rows;
   }
 
+  /** 프로그래매틱 SEO 데이터: 카테고리×지역별 상위 N개 샵 (review_count desc).
+   *  seo_generate.py가 이걸로 api SEO 데이터셋을 만든다(Supabase 이전). */
+  async getSeoShops(categories: string[], topN: number): Promise<Record<string, unknown>[]> {
+    if (!categories.length) return [];
+    const n = Math.min(Math.max(topN, 1), 100);
+    const { rows } = await this.rds.query(
+      `WITH ranked AS (
+         SELECT category, gu, name, min_price, price_tier, has_event, first_visit_deal,
+                today_open, review_count,
+                ROW_NUMBER() OVER (PARTITION BY category, gu
+                                   ORDER BY review_count DESC NULLS LAST) AS rn
+         FROM shops
+         WHERE category = ANY($1::text[]) AND gu IS NOT NULL AND name IS NOT NULL
+       )
+       SELECT category, gu, name, min_price, price_tier, has_event, first_visit_deal,
+              today_open, review_count
+       FROM ranked WHERE rn <= $2
+       ORDER BY category, gu, review_count DESC NULLS LAST`,
+      [categories, n],
+    );
+    return rows;
+  }
+
   /** 알림용 샵 메타 (name/lat/lng) */
   async getMeta(ids: string[]): Promise<Record<string, unknown>[]> {
     if (!ids.length) return [];

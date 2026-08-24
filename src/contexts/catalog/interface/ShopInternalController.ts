@@ -32,6 +32,15 @@ export class ShopInternalController {
     } catch (err) { next(err); }
   };
 
+  seoShops = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const categories = String(req.query.categories ?? '네일')
+        .split(',').map(s => s.trim()).filter(Boolean);
+      const topN = parseInt(String(req.query.topn ?? '40'), 10) || 40;
+      res.json({ categories, shops: await this.svc.getSeoShops(categories, topN) });
+    } catch (err) { next(err); }
+  };
+
   priceTargets = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try { res.json({ targets: await this.svc.getPriceTargets(parseInt(String(req.query.limit ?? '300'), 10) || 300) }); }
     catch (err) { next(err); }

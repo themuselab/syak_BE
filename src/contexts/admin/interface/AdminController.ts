@@ -1016,6 +1016,8 @@ export class AdminController {
       const key = `${req.params.date}/${req.params.file}`;
       if (!/^\d{4}-\d{2}-\d{2}\/[\w.-]+$/.test(key)) { res.status(400).end(); return; }
       const url = await s3PresignGet(key, 3600);
+      // presigned URL은 1h 후 만료 → 302를 캐시하면 만료 후 깨짐. 매번 새 서명 받도록 no-store.
+      res.setHeader('Cache-Control', 'no-store');
       res.redirect(302, url);
     } catch {
       res.status(404).end();
@@ -1047,6 +1049,7 @@ export class AdminController {
     try {
       const key = ((req.params as unknown as string[])[0] || '').replace(/^\/+/, '');
       if (!/^[\w./-]+$/.test(key) || key.includes('..')) { res.status(400).end(); return; }
+      res.setHeader('Cache-Control', 'no-store'); // presigned 302 만료 캐시 방지
       res.redirect(302, await s3PresignGet(key, 3600));
     } catch { res.status(404).end(); }
   };

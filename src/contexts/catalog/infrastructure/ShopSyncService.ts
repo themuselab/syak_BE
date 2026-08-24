@@ -17,6 +17,7 @@ export class ShopSyncService {
   }
 
   /** 프로그래매틱 SEO 데이터: 카테고리×지역별 상위 N개 샵 (review_count desc).
+   *  콘텐츠 심화용으로 주소(road)·실제 메뉴(menus 상위3, 노이즈 제외)도 반환.
    *  seo_generate.py가 이걸로 api SEO 데이터셋을 만든다(Supabase 이전). */
   async getSeoShops(categories: string[], topN: number): Promise<Record<string, unknown>[]> {
     if (!categories.length) return [];
@@ -25,18 +26,38 @@ export class ShopSyncService {
       `WITH ranked AS (
          SELECT category, gu, name, min_price, price_tier, has_event, first_visit_deal,
                 today_open, review_count,
+                detail->>'roadAddress' AS road, detail->'menus' AS menus,
                 ROW_NUMBER() OVER (PARTITION BY category, gu
                                    ORDER BY review_count DESC NULLS LAST) AS rn
          FROM shops
          WHERE category = ANY($1::text[]) AND gu IS NOT NULL AND name IS NOT NULL
        )
        SELECT category, gu, name, min_price, price_tier, has_event, first_visit_deal,
-              today_open, review_count
+              today_open, review_count, road, menus
        FROM ranked WHERE rn <= $2
        ORDER BY category, gu, review_count DESC NULLS LAST`,
       [categories, n],
     );
-    return rows;
+    // 메뉴 노이즈(제거/오프/추가 등) 제외 후 저가 실제 시술 상위 3개만 압축해 반환(페이로드 절감)
+    const NOISE = /제거|오프|off|리무브|리페어|음료|추가|옵션|보강|보수|파라핀|영양제|드릴|디자인추가|보호|글루|케어추가|기장|길이|증모|붙임|별도|정리|리터치|낱개|한개|개당|포인트|스톤|파츠|보충|큐티클|자샵|타샵|샴푸/;
+    return rows.map(r => {
+      const menus = Array.isArray(r.menus) ? r.menus : [];
+      const real = menus
+        .filter((m: Record<string, unknown>) => {
+          const p = Number(m?.price);
+          const nm = String(m?.name ?? '');
+          return p >= 5000 && p <= 2000000 && nm && !NOISE.test(nm);
+        })
+        .sort((a: Record<string, unknown>, b: Record<string, unknown>) => Number(a.price) - Number(b.price))
+        .slice(0, 3)
+        .map((m: Record<string, unknown>) => ({ n: String(m.name), p: Number(m.price) }));
+      return {
+        category: r.category, gu: r.gu, name: r.name, min_price: r.min_price,
+        price_tier: r.price_tier, has_event: r.has_event, first_visit_deal: r.first_visit_deal,
+        today_open: r.today_open, review_count: r.review_count,
+        road: r.road ?? null, menus: real,
+      };
+    });
   }
 
   /** 알림용 샵 메타 (name/lat/lng) */

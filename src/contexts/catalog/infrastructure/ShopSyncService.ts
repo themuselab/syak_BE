@@ -38,19 +38,21 @@ export class ShopSyncService {
        ORDER BY category, gu, review_count DESC NULLS LAST`,
       [categories, n],
     );
-    // 메뉴 노이즈(제거/오프/추가 등) 제외 후 저가 실제 시술 상위 3개만 압축해 반환(페이로드 절감)
-    const NOISE = /제거|오프|off|리무브|리페어|음료|추가|옵션|보강|보수|파라핀|영양제|드릴|디자인추가|보호|글루|케어추가|기장|길이|증모|붙임|별도|정리|리터치|낱개|한개|개당|포인트|스톤|파츠|보충|큐티클|자샵|타샵|샴푸/;
+    // 대표 시술 추출: (1)노이즈/애드온 제외 (2)recommend=true(샵 지정 대표) 우선,
+    // 없으면 가격하한(₩12,000) 이상 실시술. → 랩핑·지정료·비리뷰 등 싸구려 옵션 배제.
+    const NOISE = /제거|오프|off|리무브|리페어|음료|추가|옵션|보강|보수|파라핀|영양제|드릴|디자인추가|보호|글루|케어추가|기장|증모|붙임|별도|정리|리터치|낱개|한개|개당|포인트|스톤|파츠|보충|큐티클|자샵|타샵|샴푸|랩핑|지정|회원가|비리뷰|오버레이|추가금|보증|EA|1ea|열손가락/i;
     return rows.map(r => {
       const menus = Array.isArray(r.menus) ? r.menus : [];
-      const real = menus
-        .filter((m: Record<string, unknown>) => {
-          const p = Number(m?.price);
-          const nm = String(m?.name ?? '');
-          return p >= 5000 && p <= 2000000 && nm && !NOISE.test(nm);
-        })
-        .sort((a: Record<string, unknown>, b: Record<string, unknown>) => Number(a.price) - Number(b.price))
-        .slice(0, 3)
-        .map((m: Record<string, unknown>) => ({ n: String(m.name), p: Number(m.price) }));
+      const clean = menus.filter((m: Record<string, unknown>) => {
+        const p = Number(m?.price);
+        const nm = String(m?.name ?? '');
+        return p >= 5000 && p <= 2000000 && nm && !NOISE.test(nm);
+      });
+      const recs = clean.filter((m: Record<string, unknown>) => m?.recommend === true && Number(m.price) >= 10000);
+      const floor = clean.filter((m: Record<string, unknown>) => Number(m.price) >= 12000);
+      const pick = (recs.length ? recs : (floor.length ? floor : clean))
+        .sort((a: Record<string, unknown>, b: Record<string, unknown>) => Number(a.price) - Number(b.price));
+      const real = pick.slice(0, 3).map((m: Record<string, unknown>) => ({ n: String(m.name), p: Number(m.price) }));
       return {
         category: r.category, gu: r.gu, name: r.name, min_price: r.min_price,
         price_tier: r.price_tier, has_event: r.has_event, first_visit_deal: r.first_visit_deal,

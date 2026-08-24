@@ -1,0 +1,69 @@
+{
+  "family": "syak-backend",
+  "networkMode": "bridge",
+  "requiresCompatibilities": ["EC2"],
+  "executionRoleArn": "arn:aws:iam::181250800061:role/syakEcsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::181250800061:role/syakTaskRole",
+  "cpu": "256",
+  "memory": "400",
+  "containerDefinitions": [
+    {
+      "name": "syak-backend",
+      "image": "181250800061.dkr.ecr.ap-northeast-2.amazonaws.com/syak-backend:latest",
+      "essential": true,
+      "memoryReservation": 300,
+      "portMappings": [
+        { "containerPort": 3000, "hostPort": 3002, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "PORT", "value": "3000" },
+        { "name": "JWT_ACCESS_EXPIRES_IN", "value": "15m" },
+        { "name": "JWT_REFRESH_EXPIRES_IN", "value": "1d" },
+        { "name": "COOKIE_SECURE", "value": "true" },
+        { "name": "COOKIE_SAME_SITE", "value": "none" },
+        { "name": "GEMINI_MODEL", "value": "gemini-2.5-flash" },
+        { "name": "GA4_PROPERTY_ID", "value": "544178953" },
+        { "name": "AWS_DEFAULT_REGION", "value": "ap-northeast-2" },
+        { "name": "S3_MARKETING_BUCKET", "value": "syak-marketing-181250800061" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:DATABASE_URL::" },
+        { "name": "APP_DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:APP_DATABASE_URL::" },
+        { "name": "SUPABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:SUPABASE_URL::" },
+        { "name": "SUPABASE_ANON_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:SUPABASE_ANON_KEY::" },
+        { "name": "SUPABASE_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:SUPABASE_SECRET_KEY::" },
+        { "name": "JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:JWT_SECRET::" },
+        { "name": "INTERNAL_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:INTERNAL_API_KEY::" },
+        { "name": "ADMIN_EMAIL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:ADMIN_EMAIL::" },
+        { "name": "ADMIN_PASSWORD", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:ADMIN_PASSWORD::" },
+        { "name": "ADMIN_SESSION_TOKEN", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:ADMIN_SESSION_TOKEN::" },
+        { "name": "FCM_SERVICE_ACCOUNT_JSON", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:FCM_SERVICE_ACCOUNT_JSON::" },
+        { "name": "SUPABASE_DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:SUPABASE_DATABASE_URL::" },
+        { "name": "NVIDIA_API_KEY_FLUX", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:NVIDIA_API_KEY_FLUX::" },
+        { "name": "GEMINI_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:GEMINI_API_KEY::" },
+        { "name": "GA4_SA_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:GA4_SA_KEY::" },
+        { "name": "AWS_ACCESS_KEY_ID", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:AWS_ACCESS_KEY_ID::" },
+        { "name": "AWS_SECRET_ACCESS_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:AWS_SECRET_ACCESS_KEY::" }
+      ],
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "node -e \"require('http').get('http://127.0.0.1:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""
+        ],
+        "interval": 15,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 30
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/syak-backend",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

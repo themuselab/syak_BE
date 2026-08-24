@@ -1,4 +1,4 @@
-name: Deploy to EC2
+name: Deploy to ECS
 
 on:
   push:
@@ -7,79 +7,63 @@ on:
 
 permissions:
   contents: read
-  packages: write
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REPOSITORY: syak-backend
+  ECS_CLUSTER: syak
+  ECS_SERVICE: syak-backend
+  ECS_CONTAINER: syak-backend
+  TASKDEF_PATH: deploy/taskdef.json
 
 jobs:
   deploy:
-    name: Deploy
+    name: Build & Deploy (ECR + ECS)
     runs-on: ubuntu-latest
     environment: production
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push image
+      - name: Build and push image to ECR
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/syak-backend:latest
-            ghcr.io/${{ github.repository_owner }}/syak-backend:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_ACTOR: ${{ github.actor }}
-          IMAGE: ghcr.io/${{ github.repository_owner }}/syak-backend:${{ github.sha }}
+      - name: Render task definition with new image
+        id: taskdef
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          envs: GH_TOKEN,GH_ACTOR,IMAGE
-          script: |
-            echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
-            chmod +x ~/deploy.sh
-            ~/deploy.sh "$IMAGE"
+          task-definition: ${{ env.TASKDEF_PATH }}
+          container-name: ${{ env.ECS_CONTAINER }}
+          image: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
-      - name: Clean up old GHCR images
-        uses: actions/github-script@v7
+      - name: Deploy to ECS service
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
-          script: |
-            const owner = context.repo.owner.toLowerCase();
-            const packageName = 'syak-backend';
-            const keepShas = new Set([context.sha]);
-
-            const { data: versions } = await github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg({
-              package_type: 'container',
-              package_name: packageName,
-              org: owner,
-              per_page: 100,
-            }).catch(() => ({ data: [] }));
-
-            for (const v of versions) {
-              const tags = v.metadata?.container?.tags ?? [];
-              const isCurrent = tags.some(t => keepShas.has(t)) || tags.includes('latest');
-              if (!isCurrent) {
-                await github.rest.packages.deletePackageVersionForOrg({
-                  package_type: 'container',
-                  package_name: packageName,
-                  org: owner,
-                  package_version_id: v.id,
-                }).catch(() => {});
-                console.log(`Deleted version ${v.id} (tags: ${tags.join(', ') || 'none'})`);
-              }
-            }
+          task-definition: ${{ steps.taskdef.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+          wait-for-minutes: 8
+      # 오래된 이미지는 ECR 라이프사이클 정책(서버측)이 자동 정리 — CI 권한 불필요

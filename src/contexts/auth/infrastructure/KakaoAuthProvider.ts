@@ -26,6 +26,9 @@ export class KakaoAuthProvider implements ISocialAuthProvider {
       redirect_uri: redirectUri,
       code,
     });
+    // 콘솔에서 client_secret(보안) ON이면 교환 요청에 반드시 실어야 함(없으면 실패).
+    const clientSecret = process.env.KAKAO_CLIENT_SECRET;
+    if (clientSecret) body.append('client_secret', clientSecret);
     const { data } = await axios.post('https://kauth.kakao.com/oauth/token', body.toString(), {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
     });

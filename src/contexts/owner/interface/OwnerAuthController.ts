@@ -24,14 +24,14 @@ export class OwnerAuthController {
     if (!VALID_PROVIDERS.includes(provider)) {
       return next(Errors.validation({ provider: '지원하지 않는 소셜 로그인 방식입니다' }));
     }
-    // 네이티브 앱: access_token / 웹 authorize 플로우: code(+redirect_uri)
-    const { access_token, code, redirect_uri } = req.body;
+    // 네이티브 앱: access_token / 웹 authorize 플로우: code(+redirect_uri, 네이버는 state)
+    const { access_token, code, redirect_uri, state } = req.body;
     if (!access_token && !code) {
       return next(Errors.validation({ credential: 'access_token 또는 code가 필요합니다' }));
     }
     try {
       const result = await this.socialLogin.execute(provider, {
-        accessToken: access_token, code, redirectUri: redirect_uri,
+        accessToken: access_token, code, redirectUri: redirect_uri, state,
       });
       this.setCookies(res, result.token);
       if (result.isNewOwner) void getAdminSSE()?.pushNow();

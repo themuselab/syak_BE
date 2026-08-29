@@ -43,7 +43,9 @@
         { "name": "NVIDIA_API_KEY_FLUX", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:NVIDIA_API_KEY_FLUX::" },
         { "name": "GEMINI_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:GEMINI_API_KEY::" },
         { "name": "GA4_SA_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:GA4_SA_KEY::" },
-        { "name": "KAKAO_REST_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:KAKAO_REST_API_KEY::" }
+        { "name": "KAKAO_REST_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:KAKAO_REST_API_KEY::" },
+        { "name": "NAVER_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:NAVER_CLIENT_ID::" },
+        { "name": "NAVER_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:NAVER_CLIENT_SECRET::" }
       ],
       "healthCheck": {
         "command": [

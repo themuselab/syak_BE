@@ -17,12 +17,22 @@ export class OwnerSocialLoginUseCase {
     private readonly providers: Record<SocialProvider, ISocialAuthProvider>,
   ) {}
 
-  async execute(provider: SocialProvider, accessToken: string): Promise<OwnerLoginResult> {
+  // 네이티브 앱은 access_token을, 웹 authorize 플로우는 code(+redirectUri)를 준다.
+  async execute(
+    provider: SocialProvider,
+    credential: { accessToken?: string; code?: string; redirectUri?: string },
+  ): Promise<OwnerLoginResult> {
     const authProvider = this.providers[provider];
     if (!authProvider) throw Errors.socialLoginFailed({ provider });
 
     let profile;
     try {
+      // 웹 코드 플로우: code → access_token 교환(provider가 지원할 때). 아니면 그대로 access_token 사용.
+      let accessToken = credential.accessToken;
+      if (!accessToken && credential.code && authProvider.exchangeCode) {
+        accessToken = await authProvider.exchangeCode(credential.code, credential.redirectUri ?? '');
+      }
+      if (!accessToken) throw new Error('no token');
       profile = await authProvider.getProfile(accessToken);
     } catch {
       throw Errors.socialLoginFailed({ provider });

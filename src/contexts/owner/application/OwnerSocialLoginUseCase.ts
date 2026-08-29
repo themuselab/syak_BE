@@ -36,7 +36,10 @@ export class OwnerSocialLoginUseCase {
       }
       if (!accessToken) throw new Error('no token');
       profile = await authProvider.getProfile(accessToken);
-    } catch {
+    } catch (e) {
+      // 원인 파악용 로깅(카카오/네이버 에러 응답). 응답 자체는 generic socialLoginFailed로.
+      const detail = (e as { response?: { data?: unknown } })?.response?.data ?? (e as Error)?.message;
+      console.error('[owner-social] login failed', provider, JSON.stringify(detail));
       throw Errors.socialLoginFailed({ provider });
     }
 

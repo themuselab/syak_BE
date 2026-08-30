@@ -46,7 +46,9 @@
         { "name": "KAKAO_REST_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:KAKAO_REST_API_KEY::" },
         { "name": "KAKAO_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:KAKAO_CLIENT_SECRET::" },
         { "name": "NAVER_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:NAVER_CLIENT_ID::" },
-        { "name": "NAVER_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:NAVER_CLIENT_SECRET::" }
+        { "name": "NAVER_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:NAVER_CLIENT_SECRET::" },
+        { "name": "APPLE_SERVICES_ID", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:APPLE_SERVICES_ID::" },
+        { "name": "APPLE_BUNDLE_ID", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:APPLE_BUNDLE_ID::" }
       ],
       "healthCheck": {
         "command": [

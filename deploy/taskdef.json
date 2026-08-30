@@ -48,7 +48,10 @@
         { "name": "NAVER_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:NAVER_CLIENT_ID::" },
         { "name": "NAVER_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:NAVER_CLIENT_SECRET::" },
         { "name": "APPLE_SERVICES_ID", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:APPLE_SERVICES_ID::" },
-        { "name": "APPLE_BUNDLE_ID", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:APPLE_BUNDLE_ID::" }
+        { "name": "APPLE_BUNDLE_ID", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:APPLE_BUNDLE_ID::" },
+        { "name": "APPLE_TEAM_ID", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:APPLE_TEAM_ID::" },
+        { "name": "APPLE_KEY_ID", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:APPLE_KEY_ID::" },
+        { "name": "APPLE_PRIVATE_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:APPLE_PRIVATE_KEY::" }
       ],
       "healthCheck": {
         "command": [

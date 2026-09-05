@@ -26,12 +26,14 @@ export class AuthController {
     if (!VALID_PROVIDERS.includes(provider)) {
       return next(Errors.validation({ provider: '지원하지 않는 소셜 로그인 방식입니다' }));
     }
-    const { access_token } = req.body;
+    const { access_token, name } = req.body;
     if (!access_token) {
       return next(Errors.validation({ access_token: 'access_token이 필요합니다' }));
     }
     try {
-      const result = await this.socialLogin.execute(provider, access_token);
+      // name: 애플 로그인 보완용(선택). 애플 최초 로그인 때만 앱이 fullName을 담아 보낸다.
+      const displayName = typeof name === 'string' ? name : undefined;
+      const result = await this.socialLogin.execute(provider, access_token, displayName);
       this.setCookies(res, result.token);
       if (result.isNewUser) void getAdminSSE()?.pushNow();
       res.status(result.isNewUser ? 201 : 200).json({

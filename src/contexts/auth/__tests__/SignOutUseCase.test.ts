@@ -8,6 +8,7 @@ function makeRepo(): IUserRepository {
     createUser: jest.fn(),
     linkSocialAccount: jest.fn(),
     updateProfile: jest.fn(),
+    updateStatus: jest.fn(),
     deleteById: jest.fn(),
     saveRefreshToken: jest.fn(),
     findRefreshToken: jest.fn(),

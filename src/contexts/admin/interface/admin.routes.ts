@@ -38,6 +38,7 @@ export function adminRouter(admin: AdminController): Router {
   // 소비자 회원 목록 + 정지/차단
   router.get('/users',                      admin.listUsers);              // AD-006
   router.patch('/users/:userId/status',     admin.updateUserStatus);       // AD-007
+  router.delete('/users/:userId',           admin.deleteUser);             // 테스트 계정 완전 삭제
 
   // 도입 문의 (SO-000a 폼 → 관리자 검토 → AD-008 샵 등록)
   router.get('/inquiries',                  admin.listInquiries);          // AD-008

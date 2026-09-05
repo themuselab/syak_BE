@@ -10,6 +10,7 @@ function makeRepo(overrides: Partial<IUserRepository> = {}): IUserRepository {
     createUser: jest.fn(),
     linkSocialAccount: jest.fn().mockResolvedValue(undefined),
     updateProfile: jest.fn().mockResolvedValue(undefined),
+    updateStatus: jest.fn().mockResolvedValue(undefined),
     deleteById: jest.fn(),
     saveRefreshToken: jest.fn(),
     findRefreshToken: jest.fn(),

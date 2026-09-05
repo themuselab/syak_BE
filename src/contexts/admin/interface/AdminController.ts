@@ -554,6 +554,16 @@ export class AdminController {
     } catch (err) { next(err); }
   };
 
+  // ── 사용자 완전 삭제 (테스트 계정 정리용) ─────────────────────
+  // 자식 행(favorites·소셜계정·refresh 토큰·디바이스 등)은 FK ON DELETE CASCADE로 함께 삭제된다.
+  deleteUser = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { rowCount } = await this.rds.query('DELETE FROM users WHERE id = $1', [req.params.userId]);
+      if (!rowCount) return next(Errors.notFound());
+      res.status(204).send();
+    } catch (err) { next(err); }
+  };
+
   // ── 통계: 예약 버튼 클릭 수 (GA4 reserve_click) ──────────────
   reservationClickStats = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {

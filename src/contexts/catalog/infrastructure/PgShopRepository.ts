@@ -70,7 +70,13 @@ export class PgShopRepository implements IShopRepository {
     if (filter.q)                  cond.push(`name ILIKE ${add(`%${filter.q}%`)}`);
     if (slotShopIds)               cond.push(`id = ANY(${add(slotShopIds)}::text[])`);
 
-    if (filter.lat != null && filter.lng != null) {
+    const hasBounds =
+      filter.swLat != null && filter.swLng != null && filter.neLat != null && filter.neLng != null;
+    if (hasBounds) {
+      // 지도 화면영역 박스(웹/앱 지도뷰: 보이는 영역 = 목록·핀 일치). 정렬은 아래 lat/lng(중심) 거리순.
+      cond.push(`lat BETWEEN ${add(filter.swLat)} AND ${add(filter.neLat)}`);
+      cond.push(`lng BETWEEN ${add(filter.swLng)} AND ${add(filter.neLng)}`);
+    } else if (filter.lat != null && filter.lng != null) {
       const r = filter.radius ?? 5;
       const latDelta = r / 111;
       const lngDelta = r / (111 * Math.cos((filter.lat * Math.PI) / 180));

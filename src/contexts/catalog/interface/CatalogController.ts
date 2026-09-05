@@ -16,6 +16,10 @@ export class CatalogController {
 
   list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
+      const num = (v: unknown) => (v != null ? parseFloat(v as string) : undefined);
+      const hasBounds = ['swLat', 'swLng', 'neLat', 'neLng'].every((k) => req.query[k] != null);
+      // 지도뷰(bounds)에선 화면 안 샵을 최대한 다 핀으로 → 상한 상향(500). 그 외는 기존 100.
+      const maxLimit = hasBounds ? 500 : 100;
       const result = await this.getShops.execute({
         q: req.query.q as string | undefined,
         region: req.query.region as string | undefined,
@@ -36,11 +40,15 @@ export class CatalogController {
           : undefined,
         slotDate: req.query.slot_date as string | undefined,
         slotTime: req.query.slot_time as string | undefined,
-        lat: req.query.lat ? parseFloat(req.query.lat as string) : undefined,
-        lng: req.query.lng ? parseFloat(req.query.lng as string) : undefined,
-        radius: req.query.radius ? parseFloat(req.query.radius as string) : undefined,
+        lat: num(req.query.lat),
+        lng: num(req.query.lng),
+        radius: num(req.query.radius),
+        swLat: num(req.query.swLat),
+        swLng: num(req.query.swLng),
+        neLat: num(req.query.neLat),
+        neLng: num(req.query.neLng),
         page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
-        limit: Math.min(req.query.limit ? parseInt(req.query.limit as string, 10) : 20, 100),
+        limit: Math.min(req.query.limit ? parseInt(req.query.limit as string, 10) : 20, maxLimit),
       });
       res.json(result);
     } catch (err) {

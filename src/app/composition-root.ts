@@ -82,7 +82,7 @@ import { FavoriteController } from '../contexts/favorite/interface/FavoriteContr
 // Notification
 import { PgNotificationRepository } from '../contexts/notification/infrastructure/PgNotificationRepository';
 import { PgAppNewsRepository } from '../contexts/notification/infrastructure/PgAppNewsRepository';
-import { FcmPushService } from '../contexts/notification/infrastructure/FcmPushService';
+import { ExpoPushService } from '../contexts/notification/infrastructure/ExpoPushService';
 import { GetNotificationsUseCase } from '../contexts/notification/application/GetNotificationsUseCase';
 import { GetSettingsUseCase } from '../contexts/notification/application/GetSettingsUseCase';
 import { UpdateSettingsUseCase } from '../contexts/notification/application/UpdateSettingsUseCase';
@@ -193,7 +193,7 @@ export function buildDependencies(): AppDependencies {
   // ── Notification (RDS) ────────────────────────────────────
   const notifRepo = new PgNotificationRepository(rds);
   const appNewsRepo = new PgAppNewsRepository(rds);
-  const pushService = new FcmPushService();
+  const pushService = new ExpoPushService(); // 소비자 앱 expo-notifications 전환 → Expo Push 발송
   const dispatchUseCase = new DispatchSlotNotificationsUseCase(notifRepo, pushService);
   const notificationController = new NotificationController(
     new GetNotificationsUseCase(notifRepo),

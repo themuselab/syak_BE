@@ -81,10 +81,19 @@ export class PgShopRepository implements IShopRepository {
     const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
 
     const sort: SortOrder = filter.sort ?? 'default';
+    const hasGeo = filter.lat != null && filter.lng != null;
     let orderBy: string;
     if (sort === 'price_asc')       orderBy = 'min_price ASC NULLS LAST';
     else if (sort === 'price_desc') orderBy = 'min_price DESC NULLS LAST';
     else if (sort === 'partner')    orderBy = 'is_partner DESC, name ASC';
+    else if (hasGeo) {
+      // 위치가 있으면 기본 정렬 = "가까운순"(거리 오름차순). 경도는 위도 코사인으로 보정한 근사거리.
+      // (반경 5km 박스 안 정렬용이라 제곱유클리드로 충분 — 동률은 파트너/이름으로 안정화)
+      const latP = add(filter.lat);
+      const lngP = add(filter.lng);
+      const latP2 = add(filter.lat);
+      orderBy = `(POWER(lat - ${latP}, 2) + POWER((lng - ${lngP}) * COS(RADIANS(${latP2})), 2)) ASC, is_partner DESC, name ASC`;
+    }
     else                            orderBy = 'today_open DESC, is_partner DESC, name ASC';
 
     const limitPh = add(limit);

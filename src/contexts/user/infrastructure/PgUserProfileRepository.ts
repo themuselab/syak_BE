@@ -27,6 +27,10 @@ export class PgUserProfileRepository implements IUserProfileRepository {
     };
   }
 
+  async updateNickname(userId: string, nickname: string): Promise<void> {
+    await this.pool.query('UPDATE users SET nickname = $2 WHERE id = $1', [userId, nickname]);
+  }
+
   async deleteById(userId: string): Promise<void> {
     await this.pool.query('DELETE FROM users WHERE id = $1', [userId]);
   }

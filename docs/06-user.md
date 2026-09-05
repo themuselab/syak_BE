@@ -51,6 +51,32 @@
 
 ---
 
+## PATCH `/api/v1/users/me` — 닉네임 수정 🔑
+
+애플 로그인은 이름을 최초 동의 시 1회만 주므로(재로그인·이름 미제공 시 없음), 사용자가 직접
+닉네임을 설정/변경할 수 있다. 카카오/네이버 닉네임도 이 API로 덮어쓸 수 있다.
+
+### Request body
+
+```json
+{ "nickname": "새닉네임" }
+```
+
+- `nickname` (string, 필수): 트림 후 1~20자. 빈 값·20자 초과 시 `VALIDATION_ERROR`(400).
+
+### Response (200)
+
+`GET /users/me`와 동일한 프로필 객체(갱신된 `nickname` 포함).
+
+### 에러
+
+| 상황 | code | HTTP |
+|---|---|---|
+| 비로그인 | `AUTH_UNAUTHORIZED` | 401 |
+| 닉네임 누락/빈값/길이초과 | `VALIDATION_ERROR` | 400 |
+
+---
+
 ## DELETE `/api/v1/users/me` — 회원 탈퇴 🔑
 
 유저 계정, 즐겨찾기, 알림 설정, 리프레시 토큰 전부 삭제됩니다. **복구 불가.**

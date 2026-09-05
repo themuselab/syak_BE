@@ -96,6 +96,7 @@ import { NotificationController } from '../contexts/notification/interface/Notif
 // User
 import { PgUserProfileRepository } from '../contexts/user/infrastructure/PgUserProfileRepository';
 import { GetProfileUseCase } from '../contexts/user/application/GetProfileUseCase';
+import { UpdateProfileUseCase } from '../contexts/user/application/UpdateProfileUseCase';
 import { WithdrawUseCase } from '../contexts/user/application/WithdrawUseCase';
 import { UserController } from '../contexts/user/interface/UserController';
 
@@ -210,6 +211,7 @@ export function buildDependencies(): AppDependencies {
   const userProfileRepo = new PgUserProfileRepository(rds);
   const userController = new UserController(
     new GetProfileUseCase(userProfileRepo),
+    new UpdateProfileUseCase(userProfileRepo),
     new WithdrawUseCase(userProfileRepo),
   );
 

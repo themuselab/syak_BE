@@ -10,6 +10,7 @@ const mockProfile: UserProfile = {
 function makeRepo(profile: UserProfile | null = mockProfile): IUserProfileRepository {
   return {
     findById: jest.fn().mockResolvedValue(profile),
+    updateNickname: jest.fn().mockResolvedValue(undefined),
     deleteById: jest.fn(),
   };
 }

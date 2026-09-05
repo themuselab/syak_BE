@@ -4,6 +4,7 @@ import { IUserProfileRepository } from '../ports/IUserProfileRepository';
 function makeRepo(): IUserProfileRepository {
   return {
     findById: jest.fn(),
+    updateNickname: jest.fn().mockResolvedValue(undefined),
     deleteById: jest.fn().mockResolvedValue(undefined),
   };
 }

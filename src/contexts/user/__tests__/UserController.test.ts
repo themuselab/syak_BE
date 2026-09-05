@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserController } from '../interface/UserController';
 import { GetProfileUseCase } from '../application/GetProfileUseCase';
+import { UpdateProfileUseCase } from '../application/UpdateProfileUseCase';
 import { WithdrawUseCase } from '../application/WithdrawUseCase';
 import { UserProfile } from '../domain/UserProfile';
 
@@ -18,8 +19,9 @@ function makeNext(): NextFunction { return jest.fn(); }
 
 function makeController() {
   const getProfile = { execute: jest.fn().mockResolvedValue(mockProfile) } as unknown as GetProfileUseCase;
+  const updateProfile = { execute: jest.fn().mockResolvedValue(mockProfile) } as unknown as UpdateProfileUseCase;
   const withdraw = { execute: jest.fn().mockResolvedValue(undefined) } as unknown as WithdrawUseCase;
-  return { ctrl: new UserController(getProfile, withdraw), getProfile, withdraw };
+  return { ctrl: new UserController(getProfile, updateProfile, withdraw), getProfile, updateProfile, withdraw };
 }
 
 describe('UserController', () => {
@@ -35,6 +37,21 @@ describe('UserController', () => {
     (getProfile.execute as jest.Mock).mockRejectedValue(new Error('not found'));
     const next = makeNext();
     await ctrl.me(makeReq(), makeRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it('updateProfile — 갱신된 프로필을 반환한다', async () => {
+    const { ctrl, updateProfile } = makeController();
+    const res = makeRes();
+    await ctrl.updateProfile(makeReq({ body: { nickname: '새닉네임' } }), res, makeNext());
+    expect(updateProfile.execute).toHaveBeenCalledWith('u1', '새닉네임');
+    expect(res.json).toHaveBeenCalledWith(mockProfile);
+  });
+
+  it('updateProfile — nickname이 문자열이 아니면 validation 에러를 next로 전달', async () => {
+    const { ctrl } = makeController();
+    const next = makeNext();
+    await ctrl.updateProfile(makeReq({ body: {} }), makeRes(), next);
     expect(next).toHaveBeenCalledWith(expect.any(Error));
   });
 

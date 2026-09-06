@@ -74,8 +74,13 @@ export class PgShopRepository implements IShopRepository {
       filter.swLat != null && filter.swLng != null && filter.neLat != null && filter.neLng != null;
     if (hasBounds) {
       // 지도 화면영역 박스(웹/앱 지도뷰: 보이는 영역 = 목록·핀 일치). 정렬은 아래 lat/lng(중심) 거리순.
-      cond.push(`lat BETWEEN ${add(filter.swLat)} AND ${add(filter.neLat)}`);
-      cond.push(`lng BETWEEN ${add(filter.swLng)} AND ${add(filter.neLng)}`);
+      // BETWEEN은 low..high 순서여야 하므로 클라가 뒤집어 보내도 min/max로 정규화(방어 — 빈 결과 방지).
+      const swLat = Math.min(filter.swLat!, filter.neLat!);
+      const neLat = Math.max(filter.swLat!, filter.neLat!);
+      const swLng = Math.min(filter.swLng!, filter.neLng!);
+      const neLng = Math.max(filter.swLng!, filter.neLng!);
+      cond.push(`lat BETWEEN ${add(swLat)} AND ${add(neLat)}`);
+      cond.push(`lng BETWEEN ${add(swLng)} AND ${add(neLng)}`);
     } else if (filter.lat != null && filter.lng != null) {
       const r = filter.radius ?? 5;
       const latDelta = r / 111;

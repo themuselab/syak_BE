@@ -16,6 +16,21 @@ export class ShopSyncService {
     return rows;
   }
 
+  /** 빈자리 알림용 고빈도 타깃: "누군가 즐겨찾기한 샵"만.
+   *  전체(getTargets, 6.4만)를 다 돌면 한 바퀴가 너무 길어 빈자리 알림이 늦는다.
+   *  알림이 실제로 나가는 대상은 즐겨찾기한 샵이므로, 그 교집합만 1~2분 주기로 돌린다.
+   *  반환 컬럼은 getTargets와 동일 → 스크래퍼의 기존 샵 처리 로직을 그대로 쓸 수 있다. */
+  async getFavoriteTargets(): Promise<Record<string, unknown>[]> {
+    const { rows } = await this.rds.query(
+      `SELECT s.id, s.biz_id, s.item_id, s.biz_type, s.item_ids, s.items
+         FROM shops s
+        WHERE s.biz_id IS NOT NULL
+          AND EXISTS (SELECT 1 FROM favorites f WHERE f.shop_id = s.id)
+        ORDER BY s.id`,
+    );
+    return rows;
+  }
+
   /** 프로그래매틱 SEO 데이터: 카테고리×지역별 상위 N개 샵 (review_count desc).
    *  콘텐츠 심화용으로 주소(road)·실제 메뉴(menus 상위3, 노이즈 제외)도 반환.
    *  seo_generate.py가 이걸로 api SEO 데이터셋을 만든다(Supabase 이전). */

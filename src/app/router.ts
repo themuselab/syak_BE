@@ -36,6 +36,7 @@ export function buildRouter(controllers: Controllers): Router {
   router.post('/internal/slots/sync', requireInternalKey, controllers.slotSync.handle); // 스크래퍼 → RDS 슬롯 동기화
   router.get('/internal/slots/open-now', requireInternalKey, controllers.slotSync.openNowHandler); // 초록핀 재계산용
   router.get('/internal/shops/targets',  requireInternalKey, controllers.shopInternal.targets);   // 스크래퍼 타깃
+  router.get('/internal/shops/favorite-targets', requireInternalKey, controllers.shopInternal.favoriteTargets); // 빈자리 알림 고빈도 타깃(즐겨찾기)
   router.get('/internal/shops/meta',     requireInternalKey, controllers.shopInternal.meta);      // 알림용 샵 메타
   router.post('/internal/shops/summary', requireInternalKey, controllers.shopInternal.summary);   // slot_summary
   router.post('/internal/shops/reconcile-today-open', requireInternalKey, controllers.shopInternal.reconcileTodayOpen);

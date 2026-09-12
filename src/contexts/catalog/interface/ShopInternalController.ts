@@ -9,6 +9,11 @@ export class ShopInternalController {
     try { res.json({ targets: await this.svc.getTargets() }); } catch (err) { next(err); }
   };
 
+  /** 즐겨찾기된 샵만 (빈자리 알림 고빈도 폴링용) */
+  favoriteTargets = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try { res.json({ targets: await this.svc.getFavoriteTargets() }); } catch (err) { next(err); }
+  };
+
   meta = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const ids = String(req.query.ids ?? '').split(',').map(s => s.trim()).filter(Boolean);

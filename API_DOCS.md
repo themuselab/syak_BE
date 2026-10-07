@@ -109,9 +109,16 @@
       "lat": 37.5665,
       "lng": 126.978,
       "reviewCount": 127,
-      "photos": ["https://..."]
+      "photos": ["https://...", "https://...", "https://..."],
+      "introduction": null
     }
   ],
+
+> `photos` — 목록은 작업 사진(`detail.images.gallery`) 앞 3장. 갤러리가 없을 때만 대표 이미지 1장.
+> 상세(`GET /shops/:id`)는 갤러리 전체를 내려준다.
+> `introduction` — 한 줄 소개(`detail.introduction`). **스크래퍼가 아직 채우지 않아 현재는 전부 null**이며,
+> 값이 들어오면 앱 목록 카드의 두 번째 줄에 자동으로 표시된다(없으면 업종 → 지역 순으로 대체).
+
   "total": 1500,
   "page": 1,
   "limit": 20

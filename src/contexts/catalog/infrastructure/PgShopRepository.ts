@@ -7,8 +7,13 @@ import { ICacheService } from '../../../shared/cache/ICacheService';
 const LIST_TTL   = 300;
 const DETAIL_TTL = 600;
 
+// 목록도 포트폴리오(갤러리) 썸네일과 한 줄 소개를 쓴다 — detail jsonb에서 필요한 두 키만 뽑는다.
+// detail 전체를 내리면 목록 60건에 메뉴·리뷰까지 실려 응답이 수십 배로 커진다.
 const SUMMARY_COLS =
-  'id, name, gu, min_price, price_tier, categories, today_open, slot_summary, event_desc, event_price, is_partner, lat, lng, representative_image, review_count';
+  "id, name, gu, min_price, price_tier, categories, today_open, slot_summary, event_desc, event_price, is_partner, lat, lng, representative_image, review_count, detail->>'introduction' AS introduction, detail->'images'->'gallery' AS gallery";
+
+// 목록 카드에 가로로 늘어놓는 작업 사진 수. 더 보려면 상세로 들어간다.
+const LIST_GALLERY_LIMIT = 3;
 const FULL_COLS = `${SUMMARY_COLS}, biz_id, detail`;
 
 function filterCacheKey(filter: ShopFilter): string {
@@ -164,8 +169,17 @@ export class PgShopRepository implements IShopRepository {
       lat:         row.lat as number | null,
       lng:         row.lng as number | null,
       reviewCount: (row.review_count as number) ?? 0,
-      photos:      row.representative_image ? [row.representative_image as string] : [],
+      // 작업 사진이 있으면 그걸 쓰고(포트폴리오), 없을 때만 대표 이미지 1장으로 대체한다.
+      photos:      this.listPhotos(row),
+      introduction: (row.introduction as string | null) ?? null,
     };
+  }
+
+  /** 목록용 사진: 갤러리 앞 LIST_GALLERY_LIMIT장, 없으면 대표 이미지 1장. */
+  private listPhotos(row: Record<string, unknown>): string[] {
+    const gallery = (row.gallery as string[] | null) ?? [];
+    if (gallery.length > 0) return gallery.slice(0, LIST_GALLERY_LIMIT);
+    return row.representative_image ? [row.representative_image as string] : [];
   }
 
   private mapFull(row: Record<string, unknown>): Shop {

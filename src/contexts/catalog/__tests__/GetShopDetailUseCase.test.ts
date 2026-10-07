@@ -11,7 +11,7 @@ const mockShop: Shop = {
   district: '강남',
   minPrice: 20000,
   priceTier: '2만원대',
-  categories: ['nail'],
+  categories: ['네일'],
   todayOpen: true,
   slotSummary: [],
   eventDesc: null,
@@ -24,6 +24,11 @@ const mockShop: Shop = {
   reviewCount: 10,
   bookingUrl: null,
   phone: null,
+  reservationRoutes: [],
+  bookingType: null,
+  roadAddress: null,
+  menus: [],
+  reviews: [],
 };
 
 function makeRepo(overrides: Partial<IShopRepository> = {}): IShopRepository {

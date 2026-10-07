@@ -75,7 +75,7 @@
 
 | 파라미터 | 타입 | 예시 | 설명 |
 |---|---|---|---|
-| `q` | string | `뷰티` | 샵 이름 검색 |
+| `q` | string | `천호` | 지역 검색(구 `gu` / 주소 `detail.roadAddress` 부분일치). 상호는 검색 안 함 |
 | `categories` | string | `네일,헤어` | 카테고리 필터 (콤마 구분, 복수 OR) |
 | `districts` | string | `강남구,서초구` | 구 필터 (콤마 구분) |
 | `price_tiers` | string | `1만원대,2만원대` | 가격대 필터 |

@@ -9,7 +9,8 @@ import { Errors } from '../../../shared/errors/AppError';
 import { getAdminSSE } from '../../admin/infrastructure/AdminSSEService';
 
 const ACCESS_MAX_AGE  = 15 * 60 * 1000;        // 15분
-const REFRESH_MAX_AGE = 24 * 60 * 60 * 1000;   // 1일
+const REFRESH_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30일 — 앱 재접속 시 재로그인 요구를 줄인다
+//            (TokenService의 JWT_REFRESH_EXPIRES_IN 기본값과 반드시 같이 맞출 것)
 
 const VALID_PROVIDERS: SocialProvider[] = ['kakao', 'naver', 'apple'];
 

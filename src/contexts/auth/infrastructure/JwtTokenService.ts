@@ -11,7 +11,9 @@ export class JwtTokenService implements ITokenService {
   constructor() {
     this.secret = process.env.JWT_SECRET!;
     this.accessExpiresIn = process.env.JWT_ACCESS_EXPIRES_IN ?? '15m';
-    this.refreshExpiresInMs = this.parseDuration(process.env.JWT_REFRESH_EXPIRES_IN ?? '1d');
+    // 30일 - AuthController의 REFRESH_MAX_AGE(쿠키 maxAge)와 동일해야 한다. 한쪽만 바꾸면
+    // 쿠키는 살아있는데 서버 토큰이 만료(또는 반대)되어 조용히 로그아웃된다.
+    this.refreshExpiresInMs = this.parseDuration(process.env.JWT_REFRESH_EXPIRES_IN ?? '30d');
   }
 
   issueTokens(userId: string): AuthToken {

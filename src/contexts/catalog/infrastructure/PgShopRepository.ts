@@ -14,7 +14,7 @@ const SUMMARY_COLS =
 
 // 목록 카드에 가로로 늘어놓는 작업 사진 수. 더 보려면 상세로 들어간다.
 const LIST_GALLERY_LIMIT = 3;
-const FULL_COLS = `${SUMMARY_COLS}, biz_id, detail`;
+const FULL_COLS = `${SUMMARY_COLS}, biz_id, biz_type, detail`;
 
 function filterCacheKey(filter: ShopFilter): string {
   return `shops:list:${JSON.stringify(filter, Object.keys(filter).sort())}`;
@@ -197,9 +197,26 @@ export class PgShopRepository implements IShopRepository {
     const rawRoutes = (detail?.reservationRoutes as Array<{ type?: string; label?: string; value?: string }> | null) ?? [];
     const imgs    = detail?.images as Record<string, unknown> | null;
 
-    const reservationRoutes = rawRoutes
+    const scraped = rawRoutes
       .filter((r) => r?.value)
       .map((r) => ({ type: (r.type ?? 'phone') as ReservationRoute['type'], label: r.label ?? '', value: r.value as string }));
+    // 네이버 예약 ID(biz_id)가 있는데 스크랩한 수단에 네이버 예약이 없으면 예약 링크를 조립해 맨 앞에 둔다.
+    // 스크래퍼가 플레이스 버튼만 읽어 네이버 예약을 빼먹는 경우가 많아, 그대로 두면 대표 수단이
+    // "톡톡으로 문의"가 됐다 — 표본 톡톡 샵 36곳 중 34곳이 실제로는 네이버 예약이 되는 샵이었다.
+    // 웹(api-shop-repository)·앱도 같은 조립을 하지만, 서버에서 해야 bookingUrl/bookingType을 쓰는
+    // 모든 소비자(구버전 앱 포함)가 맞는 값을 받는다. biz_type 미상이면 웹과 같이 13.
+    const bizId = row.biz_id as string | null;
+    const reservationRoutes: ReservationRoute[] =
+      bizId && !scraped.some((r) => r.type === 'naver')
+        ? [
+            {
+              type: 'naver',
+              label: '네이버 예약',
+              value: `https://m.booking.naver.com/booking/${(row.biz_type as number | null) ?? 13}/bizes/${bizId}`,
+            },
+            ...scraped,
+          ]
+        : scraped;
     const primary = reservationRoutes.find((r) => r.type === 'naver') ?? reservationRoutes[0] ?? null;
 
     const gallery = (imgs?.gallery as string[] | null) ?? [];
@@ -213,7 +230,7 @@ export class PgShopRepository implements IShopRepository {
     return {
       ...this.mapSummary(row),
       photos,
-      bizId:       row.biz_id as string | null,
+      bizId,
       reservationRoutes,
       bookingUrl:  primary?.value ?? null,
       bookingType: primary?.type ?? null,

@@ -49,6 +49,8 @@ export interface Shop {
   reviewCount: number;
   /** 한 줄 소개(detail.introduction). 스크래퍼가 채우기 전까지는 null */
   introduction: string | null;
+  /** 리뷰 1건 미리보기(detail.reviews[0].body). 목록 카드 하단 한 줄용 */
+  previewReview: string | null;
   /** 예약/문의 수단 전체. FE는 type으로 버튼/라벨을 정확히 렌더링한다 */
   reservationRoutes: ReservationRoute[];
   /** 대표 예약 링크 = naver 예약 우선, 없으면 첫 항목 (하위호환) */
@@ -67,4 +69,5 @@ export type ShopSummary = Pick<
   | 'minPrice' | 'priceTier' | 'categories'
   | 'todayOpen' | 'slotSummary' | 'eventDesc' | 'eventPrice'
   | 'isPartner' | 'lat' | 'lng' | 'photos' | 'reviewCount' | 'introduction'
+  | 'previewReview' | 'roadAddress'
 >;

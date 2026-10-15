@@ -10,7 +10,7 @@ const DETAIL_TTL = 600;
 // 목록도 포트폴리오(갤러리) 썸네일과 한 줄 소개를 쓴다 — detail jsonb에서 필요한 두 키만 뽑는다.
 // detail 전체를 내리면 목록 60건에 메뉴·리뷰까지 실려 응답이 수십 배로 커진다.
 const SUMMARY_COLS =
-  "id, name, gu, min_price, price_tier, categories, today_open, slot_summary, event_desc, event_price, is_partner, lat, lng, representative_image, review_count, detail->>'introduction' AS introduction, detail->'images'->'gallery' AS gallery";
+  "id, name, gu, min_price, price_tier, categories, today_open, slot_summary, event_desc, event_price, is_partner, lat, lng, representative_image, review_count, detail->>'introduction' AS introduction, detail->'images'->'gallery' AS gallery, detail->>'roadAddress' AS road_address, detail->'reviews'->0->>'body' AS preview_review";
 
 // 목록 카드에 가로로 늘어놓는 작업 사진 수. 더 보려면 상세로 들어간다.
 const LIST_GALLERY_LIMIT = 3;
@@ -69,6 +69,10 @@ export class PgShopRepository implements IShopRepository {
       cond.push(`(${ors.join(' OR ')})`);
     }
     if (filter.priceTiers?.length) cond.push(`price_tier = ANY(${add(filter.priceTiers)}::text[])`);
+    // 가격 범위(원). 가격 미등록(min_price NULL) 샵은 범위를 걸면 빠진다 — 필터를 건 의도에 맞다.
+    if (filter.priceMin != null)   cond.push(`min_price >= ${add(filter.priceMin)}`);
+    if (filter.priceMax != null)   cond.push(`min_price <= ${add(filter.priceMax)}`);
+    if (filter.isPartner)          cond.push(`is_partner = true`);
     if (filter.hasEvent)           cond.push(`event_desc IS NOT NULL`);
     if (filter.hasSlot)            cond.push(`today_open = true`);
     if (filter.districts?.length)  cond.push(`gu = ANY(${add(filter.districts)}::text[])`);
@@ -108,6 +112,7 @@ export class PgShopRepository implements IShopRepository {
     if (sort === 'price_asc')       orderBy = 'min_price ASC NULLS LAST';
     else if (sort === 'price_desc') orderBy = 'min_price DESC NULLS LAST';
     else if (sort === 'partner')    orderBy = 'is_partner DESC, name ASC';
+    else if (sort === 'review')     orderBy = 'review_count DESC NULLS LAST, name ASC';
     else if (hasGeo) {
       // 위치가 있으면 기본 정렬 = "가까운순"(거리 오름차순). 경도는 위도 코사인으로 보정한 근사거리.
       // (반경 5km 박스 안 정렬용이라 제곱유클리드로 충분 — 동률은 파트너/이름으로 안정화)
@@ -172,6 +177,9 @@ export class PgShopRepository implements IShopRepository {
       // 작업 사진이 있으면 그걸 쓰고(포트폴리오), 없을 때만 대표 이미지 1장으로 대체한다.
       photos:      this.listPhotos(row),
       introduction: (row.introduction as string | null) ?? null,
+      // 카드 하단 한 줄 리뷰 / 동네 표기용 주소. 상세를 또 부르지 않게 목록에서 같이 내려준다.
+      previewReview: (row.preview_review as string | null) ?? null,
+      roadAddress:   (row.road_address as string | null) ?? null,
     };
   }
 

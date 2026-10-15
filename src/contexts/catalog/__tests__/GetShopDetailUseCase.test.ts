@@ -25,6 +25,7 @@ const mockShop: Shop = {
   bookingUrl: null,
   phone: null,
   introduction: null,
+  previewReview: null,
   reservationRoutes: [],
   bookingType: null,
   roadAddress: null,

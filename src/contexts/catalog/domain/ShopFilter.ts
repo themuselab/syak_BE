@@ -1,6 +1,7 @@
 import { Category, PriceTier } from './Shop';
 
-export type SortOrder = 'default' | 'price_asc' | 'price_desc' | 'partner';
+// 'default' = 관련도순(앱 필터 시트 라벨). 'review' = 리뷰 많은순.
+export type SortOrder = 'default' | 'price_asc' | 'price_desc' | 'partner' | 'review';
 
 export interface ShopFilter {
   q?: string;
@@ -9,6 +10,9 @@ export interface ShopFilter {
   categories?: Category[];
   districts?: string[];
   priceTiers?: PriceTier[];
+  priceMin?: number;          // 가격 범위(원) — 앱 필터 시트의 슬라이더. min_price 기준
+  priceMax?: number;
+  isPartner?: boolean;        // 샥 파트너 샵만 (앱 홈 "샥 파트너" 카테고리 칩)
   hasEvent?: boolean;
   hasSlot?: boolean;          // 오늘 슬롯 있는 샵만 (today_open=true)
   availableWithinDays?: number; // N일 내 슬롯 있는 샵만 (slots 테이블 조회)

@@ -33,6 +33,10 @@ export class CatalogController {
         priceTiers: req.query.price_tiers
           ? (req.query.price_tiers as string).split(',') as PriceTier[]
           : undefined,
+        // 가격 범위(원). 앱 필터 시트 슬라이더가 만원 단위로 보내도 서버는 원 단위로 받는다.
+        priceMin: num(req.query.price_min),
+        priceMax: num(req.query.price_max),
+        isPartner: req.query.is_partner === 'true',
         hasEvent: req.query.has_event === 'true',
         hasSlot: req.query.has_slot === 'true',
         availableWithinDays: req.query.available_within_days

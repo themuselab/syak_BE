@@ -77,11 +77,13 @@ export class PgShopRepository implements IShopRepository {
     if (filter.hasSlot)            cond.push(`today_open = true`);
     if (filter.districts?.length)  cond.push(`gu = ANY(${add(filter.districts)}::text[])`);
     if (filter.q) {
-      // q = 지역 검색 전용("천호" → 천호동 샵들). 상호 검색은 뺐다 — 앱 검색창이 "지도검색"이라
-      // 지역만 찾는다. 구는 gu 컬럼, 동/도로명은 detail.roadAddress. 둘 중 하나만 맞으면 된다.
+      // q = 샵·시술·동네 통합 검색(앱 검색창 "샵, 시술, 동네 검색" — 디자이너 시안 2026-10-15).
+      // 상호(name) / 시술 분야(categories jsonb) / 구(gu) / 도로명 주소 중 하나만 맞으면 된다.
       // (이 엔드포인트의 유일한 소비자는 앱이다. 웹은 /web/shops/search를 따로 쓴다.)
       const like = add(`%${filter.q}%`);
-      cond.push(`(gu ILIKE ${like} OR detail->>'roadAddress' ILIKE ${like})`);
+      cond.push(
+        `(name ILIKE ${like} OR categories::text ILIKE ${like} OR gu ILIKE ${like} OR detail->>'roadAddress' ILIKE ${like})`,
+      );
     }
     if (slotShopIds)               cond.push(`id = ANY(${add(slotShopIds)}::text[])`);
 

@@ -75,9 +75,11 @@
 
 | 파라미터 | 타입 | 예시 | 설명 |
 |---|---|---|---|
-| `q` | string | `천호` | 지역 검색(구 `gu` / 주소 `detail.roadAddress` 부분일치). 상호는 검색 안 함 |
+| `q` | string | `천호` | 샵·시술·동네 통합 검색(상호 / 시술 분야 / 구 / 도로명 주소 부분일치) |
 | `categories` | string | `네일,헤어` | 카테고리 필터 (콤마 구분, 복수 OR) |
 | `districts` | string | `강남구,서초구` | 구 필터 (콤마 구분) |
+| `price_min` / `price_max` | number | `10000` | 가격 범위(원, min_price 기준) |
+| `is_partner` | boolean | `true` | 샥 파트너만 |
 | `price_tiers` | string | `1만원대,2만원대` | 가격대 필터 |
 | `sort` | string | `price_asc` | 정렬: `default` `price_asc` `price_desc` `partner` |
 | `has_event` | boolean | `true` | 이벤트 있는 샵만 |

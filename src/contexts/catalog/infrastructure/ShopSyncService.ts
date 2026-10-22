@@ -132,6 +132,47 @@ export class ShopSyncService {
     return n;
   }
 
+  /** 할인/이벤트 일괄 갱신(enrich_events.py). event_desc null = 이벤트 끝남(정리) */
+  async updateEvents(rows: { id: string; event_desc: string | null; event_price: string | null }[]): Promise<number> {
+    let n = 0;
+    for (let i = 0; i < rows.length; i += 500) {
+      const batch = rows.slice(i, i + 500);
+      const vals: string[] = [];
+      const params: unknown[] = [];
+      batch.forEach((r, j) => {
+        vals.push(`($${j * 3 + 1}, $${j * 3 + 2}, $${j * 3 + 3})`);
+        params.push(String(r.id), r.event_desc ?? null, r.event_price ?? null);
+      });
+      const { rowCount } = await this.rds.query(
+        `UPDATE shops s SET event_desc = v.d, event_price = v.p
+         FROM (VALUES ${vals.join(',')}) AS v(id, d, p)
+         WHERE s.id = v.id`,
+        params,
+      );
+      n += rowCount ?? 0;
+    }
+    return n;
+  }
+
+  /** 상세 보강(price_sync.py): 영업시간·평점·최근 리뷰를 detail JSON에 합친다.
+   *  보낸 키만 덮어쓴다(없는 키는 기존 값 보존) — 수집 실패한 항목이 지워지지 않게. */
+  async updateDetails(rows: { id: string; businessHours?: unknown; rating?: number | null; reviews?: unknown }[]): Promise<number> {
+    let n = 0;
+    for (const r of rows) {
+      const patch: Record<string, unknown> = {};
+      if (Array.isArray(r.businessHours)) patch.businessHours = r.businessHours;
+      if (typeof r.rating === 'number' && r.rating > 0) patch.rating = r.rating;
+      if (Array.isArray(r.reviews) && r.reviews.length) patch.reviews = r.reviews;
+      if (!Object.keys(patch).length) continue;
+      const { rowCount } = await this.rds.query(
+        `UPDATE shops SET detail = COALESCE(detail, '{}'::jsonb) || $2::jsonb WHERE id = $1`,
+        [String(r.id), JSON.stringify(patch)],
+      );
+      n += rowCount ?? 0;
+    }
+    return n;
+  }
+
   // ── 파트너 동기화(sync_partners) ─────────────────────────────
   /** is_partner=true 이면서 아직 sync 안 된 샵 */
   async getPartnerUnsynced(limit: number): Promise<Record<string, unknown>[]> {

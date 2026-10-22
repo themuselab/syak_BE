@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { IShopRepository, ShopListResult } from '../ports/IShopRepository';
-import { Shop, ShopSummary, ShopMenu, ShopReview, Category, PriceTier, ReservationRoute } from '../domain/Shop';
+import { Shop, ShopSummary, ShopMenu, ShopReview, Category, PriceTier, ReservationRoute, BusinessHourDay } from '../domain/Shop';
 import { ShopFilter, SortOrder } from '../domain/ShopFilter';
 import { ICacheService } from '../../../shared/cache/ICacheService';
 
@@ -246,7 +246,12 @@ export class PgShopRepository implements IShopRepository {
         images:     (r.images as string[]) ?? [],
         keywords:   (r.keywords as string[]) ?? [],
         ownerReply: (r.ownerReply as string | null) ?? null,
+        visited:    (r.visited as string | null) ?? null,
       } satisfies ShopReview)),
+      rating: typeof detail?.rating === 'number' ? (detail.rating as number) : null,
+      businessHours: Array.isArray(detail?.businessHours) && (detail.businessHours as unknown[]).length
+        ? (detail.businessHours as BusinessHourDay[])
+        : null,
     };
   }
 }

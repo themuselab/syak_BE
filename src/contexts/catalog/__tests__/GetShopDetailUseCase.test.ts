@@ -31,6 +31,8 @@ const mockShop: Shop = {
   roadAddress: null,
   menus: [],
   reviews: [],
+  rating: null,
+  businessHours: null,
 };
 
 function makeRepo(overrides: Partial<IShopRepository> = {}): IShopRepository {

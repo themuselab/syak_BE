@@ -71,4 +71,18 @@ export class ShopInternalController {
       res.json({ ok: true, id: row.id });
     } catch (err) { next(err); }
   };
+
+  updateEvents = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+      res.json({ updated: await this.svc.updateEvents(rows) });
+    } catch (err) { next(err); }
+  };
+
+  updateDetails = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+      res.json({ updated: await this.svc.updateDetails(rows) });
+    } catch (err) { next(err); }
+  };
 }

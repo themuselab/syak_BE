@@ -46,6 +46,8 @@ export function buildRouter(controllers: Controllers): Router {
   router.post('/internal/shops/prices',        requireInternalKey, controllers.shopInternal.updatePrices);
   router.get('/internal/shops/partner-unsynced', requireInternalKey, controllers.shopInternal.partnerUnsynced); // sync_partners
   router.post('/internal/shops/enrich',        requireInternalKey, controllers.shopInternal.enrichShop);
+  router.post('/internal/shops/events',        requireInternalKey, controllers.shopInternal.updateEvents);  // enrich_events
+  router.post('/internal/shops/details',       requireInternalKey, controllers.shopInternal.updateDetails); // price_sync(영업시간·평점·리뷰)
 
   return router;
 }

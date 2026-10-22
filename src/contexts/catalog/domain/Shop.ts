@@ -19,6 +19,17 @@ export interface ShopReview {
   images: string[];
   keywords: string[];
   ownerReply: string | null;
+  /** 방문일 표시 문자열(네이버 원문, 예 "10.8.목"). 옛 수집분은 없음 → null */
+  visited: string | null;
+}
+
+/** 요일별 영업시간 1줄(네이버 newBusinessHours 정규화). start/end 없으면 휴무 */
+export interface BusinessHourDay {
+  day: string;            // "월"…"일", 또는 "매일"
+  start: string | null;   // "10:00"
+  end: string | null;     // "21:00" (24:00 넘김은 네이버 표기 그대로)
+  breaks: { start: string; end: string }[];
+  description: string | null; // "정기휴무" 등
 }
 
 /** 예약/문의 수단. type으로 정확히 구분된다 (스크래퍼가 분류해 저장) */
@@ -61,6 +72,10 @@ export interface Shop {
   roadAddress: string | null;
   menus: ShopMenu[];
   reviews: ShopReview[];
+  /** 방문자 리뷰 평점(네이버 visitorReviewsScore). 수집 전/비공개면 null */
+  rating: number | null;
+  /** 요일별 영업시간. 수집 전이면 null — 앱은 null이면 영업 정보 줄을 숨긴다 */
+  businessHours: BusinessHourDay[] | null;
 }
 
 export type ShopSummary = Pick<

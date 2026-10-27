@@ -58,6 +58,38 @@ describe('DispatchSlotNotificationsUseCase', () => {
     expect(result.dispatched).toBe(2);
   });
 
+  it('같은 샵의 빈자리 여러 개는 알림 1개로 묶는다', async () => {
+    const repo = makeRepo([favTarget]);
+    const push = makePush();
+    const useCase = new DispatchSlotNotificationsUseCase(repo, push);
+    const result = await useCase.execute([
+      { ...event, slotTime: '12:00' },
+      { ...event, slotTime: '10:00' },
+      { ...event, slotTime: '11:00' },
+      { ...event, slotTime: '10:00' },
+    ]);
+    expect(push.send).toHaveBeenCalledTimes(1);
+    expect(push.send).toHaveBeenCalledWith('token-1', expect.objectContaining({ body: '오늘 10:00 · 11:00 · 12:00 예약 가능' }));
+    expect(repo.insert).toHaveBeenCalledWith(expect.objectContaining({ slotTime: '10:00 외 2개' }));
+    expect(result.dispatched).toBe(1);
+  });
+
+  it('4개 이상이면 앞 3개만 보여주고 나머지는 개수로', async () => {
+    const repo = makeRepo([favTarget]);
+    const push = makePush();
+    const useCase = new DispatchSlotNotificationsUseCase(repo, push);
+    await useCase.execute(['10:00', '11:00', '12:00', '13:00', '14:00'].map((t) => ({ ...event, slotTime: t })));
+    expect(push.send).toHaveBeenCalledWith('token-1', expect.objectContaining({ body: '오늘 10:00 · 11:00 · 12:00 외 2개 예약 가능' }));
+  });
+
+  it('샵이 다르면 샵마다 따로 보낸다', async () => {
+    const repo = makeRepo([favTarget]);
+    const push = makePush();
+    const useCase = new DispatchSlotNotificationsUseCase(repo, push);
+    await useCase.execute([event, { ...event, shopId: 'shop-2', shopName: '다른샵' }]);
+    expect(push.send).toHaveBeenCalledTimes(2);
+  });
+
   it('이벤트가 없으면 dispatched=0을 반환한다', async () => {
     const useCase = new DispatchSlotNotificationsUseCase(makeRepo(), makePush());
     const result = await useCase.execute([]);

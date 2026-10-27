@@ -6,4 +6,8 @@ export class MarkReadUseCase {
   async execute(notificationId: string, userId: string): Promise<void> {
     await this.notifRepo.markRead(notificationId, userId);
   }
+
+  async executeShop(shopId: string, userId: string): Promise<void> {
+    await this.notifRepo.markShopRead(shopId, userId);
+  }
 }

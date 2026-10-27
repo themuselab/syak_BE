@@ -49,6 +49,14 @@ export class NotificationController {
     } catch (err) { next(err); }
   };
 
+  /** 푸시를 눌러 샵에 들어오면 알림 목록을 안 거쳐도 그 샵 알림을 읽음 처리 */
+  markShopRead = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      await this.markReadUC.executeShop(req.params.shopId, req.user!.sub);
+      res.status(204).send();
+    } catch (err) { next(err); }
+  };
+
   dispatchHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const result = await this.dispatch.execute(req.body.events ?? []);

@@ -43,6 +43,14 @@ export class PgNotificationRepository implements INotificationRepository {
     );
   }
 
+  async markShopRead(shopId: string, userId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE notifications SET read_at = NOW()
+       WHERE shop_id = $1 AND user_id = $2 AND read_at IS NULL`,
+      [shopId, userId],
+    );
+  }
+
   async getSettings(userId: string): Promise<NotificationSettings | null> {
     const { rows } = await this.pool.query(
       'SELECT * FROM notification_settings WHERE user_id = $1',

@@ -12,6 +12,7 @@ function makeRepo(settings: NotificationSettings | null = mockSettings): INotifi
     findTodayByUser: jest.fn(),
     insert: jest.fn(),
     markRead: jest.fn(),
+    markShopRead: jest.fn(),
     getSettings: jest.fn().mockResolvedValue(settings),
     upsertSettings: jest.fn().mockResolvedValue(mockSettings),
     findFavoriteTargets: jest.fn(),

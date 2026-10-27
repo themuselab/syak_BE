@@ -11,6 +11,7 @@ function makeRepo(): INotificationRepository {
     findTodayByUser: jest.fn().mockResolvedValue(mockNotifs),
     insert: jest.fn(),
     markRead: jest.fn(),
+    markShopRead: jest.fn(),
     getSettings: jest.fn(),
     upsertSettings: jest.fn(),
     findFavoriteTargets: jest.fn(),

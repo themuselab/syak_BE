@@ -725,6 +725,68 @@ export class AdminController {
     }
   };
 
+  /** 내부용(디코 앱 지표 리포트) — 최근 hours시간 앱 지표. RDS 집계만, 각 항목 실패 시 null. */
+  appMetrics = async (req: Request, res: Response): Promise<void> => {
+    const hours = Math.min(Math.max(parseInt(String(req.query.hours ?? '24'), 10) || 24, 1), 24 * 31);
+    const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+    const num = (sql: string, params: unknown[] = []) =>
+      this.rds.query(sql, params).then(r => Number(Object.values(r.rows[0] ?? { n: 0 })[0] ?? 0)).catch((e: Error) => {
+        console.error('[appMetrics]', e.message);
+        return null;
+      });
+
+    const [
+      newUsers, totalUsers, newFavorites, totalFavorites, views, viewers,
+      notifSent, notifUnread, regionUsers, pushDevices,
+      totalOwners, linkedOwners, newOwners, codesIssued, codesUsed, codesOpen, totalCodes, totalCodesUsed,
+      ownerSlotsNew, ownerSlotsTotal, openSlots, totalShops, top,
+    ] = await Promise.all([
+      num(`SELECT COUNT(*) FROM users WHERE created_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM users`),
+      num(`SELECT COUNT(*) FROM favorites WHERE created_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM favorites`),
+      num(`SELECT COUNT(*) FROM shop_view_events WHERE viewed_at >= $1`, [since]),
+      num(`SELECT COUNT(DISTINCT user_id) FROM shop_view_events WHERE viewed_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM notifications WHERE created_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM notifications WHERE created_at >= $1 AND read_at IS NULL`, [since]),
+      num(`SELECT COUNT(*) FROM notification_settings WHERE region_code IS NOT NULL`),
+      num(`SELECT COUNT(*) FROM push_devices`),
+      num(`SELECT COUNT(*) FROM owner_accounts`),
+      num(`SELECT COUNT(*) FROM owner_accounts WHERE shop_id IS NOT NULL`),
+      num(`SELECT COUNT(*) FROM owner_accounts WHERE created_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM partner_codes WHERE created_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM partner_codes WHERE used = TRUE AND used_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM partner_codes WHERE used = FALSE AND expires_at > NOW()`),
+      num(`SELECT COUNT(*) FROM partner_codes`),
+      num(`SELECT COUNT(*) FROM partner_codes WHERE used = TRUE`),
+      num(`SELECT COUNT(*) FROM slots WHERE source = 'owner' AND created_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM slots WHERE source = 'owner'`),
+      num(`SELECT COUNT(*) FROM slots WHERE date >= (NOW() AT TIME ZONE 'Asia/Seoul')::date`),
+      num(`SELECT COUNT(*) FROM shops`),
+      this.rds.query(
+        `SELECT e.shop_id, COALESCE(s.name, e.shop_id) AS name, COUNT(*)::int AS views
+           FROM shop_view_events e LEFT JOIN shops s ON s.id = e.shop_id
+          WHERE e.viewed_at >= $1
+          GROUP BY e.shop_id, s.name ORDER BY views DESC LIMIT 10`,
+        [since],
+      ).then(r => r.rows as { shop_id: string; name: string; views: number }[]).catch(() => null),
+    ]);
+
+    res.json({
+      hours, since,
+      users: { new: newUsers, total: totalUsers, regionSet: regionUsers, pushDevices },
+      favorites: { new: newFavorites, total: totalFavorites },
+      views: { total: views, users: viewers, top },
+      notifications: { sent: notifSent, unread: notifUnread },
+      partner: {
+        owners: totalOwners, linked: linkedOwners, newOwners,
+        codesIssued, codesUsed, codesOpen, totalCodes, totalCodesUsed,
+        ownerSlotsNew, ownerSlotsTotal,
+      },
+      catalog: { shops: totalShops, openSlots },
+    });
+  };
+
   // ── AWS 이번 달 비용 + 프리티어 잔여 (Cost Explorer/FreeTier, 12h 캐시) ──
   private awsCostCache: { at: number; data: AwsCostResponse | null } = { at: 0, data: null };
   awsCost = async (_req: Request, res: Response): Promise<void> => {

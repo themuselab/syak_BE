@@ -54,9 +54,8 @@ export class PgNotificationRepository implements INotificationRepository {
   async upsertSettings(userId: string, input: UpdateNotificationSettingsInput): Promise<NotificationSettings> {
     const { rows } = await this.pool.query(
       `INSERT INTO notification_settings
-         (user_id, near_enabled, near_lat, near_lng, radius_km, favorite_enabled, shop_news_enabled, fcm_token,
-          region_code, region_name, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+         (user_id, near_enabled, near_lat, near_lng, radius_km, favorite_enabled, shop_news_enabled, fcm_token, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
        ON CONFLICT (user_id) DO UPDATE SET
          near_enabled      = COALESCE($2, notification_settings.near_enabled),
          near_lat          = COALESCE($3, notification_settings.near_lat),
@@ -65,8 +64,6 @@ export class PgNotificationRepository implements INotificationRepository {
          favorite_enabled  = COALESCE($6, notification_settings.favorite_enabled),
          shop_news_enabled = COALESCE($7, notification_settings.shop_news_enabled),
          fcm_token         = COALESCE($8, notification_settings.fcm_token),
-         region_code       = COALESCE($9, notification_settings.region_code),
-         region_name       = COALESCE($10, notification_settings.region_name),
          updated_at        = NOW()
        RETURNING *`,
       [
@@ -78,10 +75,20 @@ export class PgNotificationRepository implements INotificationRepository {
         input.favoriteEnabled ?? null,
         input.shopNewsEnabled ?? null,
         input.fcmToken ?? null,
-        input.regionCode ?? null,
-        input.regionName ?? null,
       ],
     );
+    // 관심 동네는 따로 쓴다 — 컬럼은 기동 시 추가되는데(server.ts) 혹시 실패해도
+    // 다른 알림 설정 저장까지 같이 깨지지 않게 분리했다.
+    if (input.regionCode !== undefined || input.regionName !== undefined) {
+      const { rows: r2 } = await this.pool.query(
+        `UPDATE notification_settings
+         SET region_code = COALESCE($2, region_code), region_name = COALESCE($3, region_name), updated_at = NOW()
+         WHERE user_id = $1
+         RETURNING *`,
+        [userId, input.regionCode ?? null, input.regionName ?? null],
+      );
+      return this.mapSettings(r2[0]);
+    }
     return this.mapSettings(rows[0]);
   }
 

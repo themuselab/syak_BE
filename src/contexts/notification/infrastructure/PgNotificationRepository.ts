@@ -54,8 +54,9 @@ export class PgNotificationRepository implements INotificationRepository {
   async upsertSettings(userId: string, input: UpdateNotificationSettingsInput): Promise<NotificationSettings> {
     const { rows } = await this.pool.query(
       `INSERT INTO notification_settings
-         (user_id, near_enabled, near_lat, near_lng, radius_km, favorite_enabled, shop_news_enabled, fcm_token, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+         (user_id, near_enabled, near_lat, near_lng, radius_km, favorite_enabled, shop_news_enabled, fcm_token,
+          region_code, region_name, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
        ON CONFLICT (user_id) DO UPDATE SET
          near_enabled      = COALESCE($2, notification_settings.near_enabled),
          near_lat          = COALESCE($3, notification_settings.near_lat),
@@ -64,6 +65,8 @@ export class PgNotificationRepository implements INotificationRepository {
          favorite_enabled  = COALESCE($6, notification_settings.favorite_enabled),
          shop_news_enabled = COALESCE($7, notification_settings.shop_news_enabled),
          fcm_token         = COALESCE($8, notification_settings.fcm_token),
+         region_code       = COALESCE($9, notification_settings.region_code),
+         region_name       = COALESCE($10, notification_settings.region_name),
          updated_at        = NOW()
        RETURNING *`,
       [
@@ -75,6 +78,8 @@ export class PgNotificationRepository implements INotificationRepository {
         input.favoriteEnabled ?? null,
         input.shopNewsEnabled ?? null,
         input.fcmToken ?? null,
+        input.regionCode ?? null,
+        input.regionName ?? null,
       ],
     );
     return this.mapSettings(rows[0]);
@@ -130,6 +135,8 @@ export class PgNotificationRepository implements INotificationRepository {
       nearLat: row.near_lat as number | null,
       nearLng: row.near_lng as number | null,
       radiusKm: row.radius_km as number,
+      regionCode: (row.region_code as string | null) ?? null,
+      regionName: (row.region_name as string | null) ?? null,
       favoriteEnabled: row.favorite_enabled as boolean,
       shopNewsEnabled: row.shop_news_enabled as boolean,
       fcmToken: row.fcm_token as string | null,

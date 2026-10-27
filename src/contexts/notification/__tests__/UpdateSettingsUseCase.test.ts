@@ -5,7 +5,7 @@ import { ErrorCode } from '../../../shared/errors/ErrorCode';
 
 const mockSettings: NotificationSettings = {
   userId: 'user-1', nearEnabled: true, nearLat: 37.5, nearLng: 127.0,
-  radiusKm: 3, favoriteEnabled: true, shopNewsEnabled: false, fcmToken: null, updatedAt: new Date(),
+  radiusKm: 3, regionCode: null, regionName: null, favoriteEnabled: true, shopNewsEnabled: false, fcmToken: null, updatedAt: new Date(),
 };
 
 function makeRepo(): INotificationRepository {

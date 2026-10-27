@@ -8,7 +8,7 @@ import { errorMiddleware } from './shared/middleware/error.middleware';
 import { buildControllers, buildDependencies } from './app/composition-root';
 import { buildRouter } from './app/router';
 import { logger } from './shared/logger';
-import { closePool } from './shared/lib/database';
+import { closePool, getRdsPool } from './shared/lib/database';
 
 // CSRF 미제거 이유: 이 API는 네이티브 모바일 앱 전용.
 // 브라우저는 제3자 사이트의 요청에 쿠키를 자동 첨부하여 CSRF가 위험하지만,
@@ -50,6 +50,16 @@ if (require.main === module) {
   app.get('/health', (_req, res) => res.status(200).send('ok'));
   app.use('/api/v1', buildRouter(controllers));
   app.use(errorMiddleware);
+
+  // 관심 동네 컬럼(2026-10-27). 운영 DB에 수동 마이그레이션할 경로가 없어 기동 시 "없으면 추가"로 맞춘다.
+  // 널 허용·기본값 없는 ADD COLUMN이라 즉시 끝나고, 이미 있으면 아무 일도 안 한다(db/migration_interest_region.sql 동일).
+  getRdsPool()
+    .query(
+      `ALTER TABLE notification_settings
+         ADD COLUMN IF NOT EXISTS region_code TEXT,
+         ADD COLUMN IF NOT EXISTS region_name TEXT`,
+    )
+    .catch((err) => logger.error({ err }, 'interest region columns ensure failed'));
 
   const server = app.listen(port, () => {
     logger.info(`Syak backend running on port ${port} [${process.env.NODE_ENV ?? 'development'}]`);

@@ -4,7 +4,7 @@ import { NotificationSettings } from '../domain/NotificationSettings';
 
 const mockSettings: NotificationSettings = {
   userId: 'u1', nearEnabled: true, nearLat: null, nearLng: null,
-  radiusKm: 3, favoriteEnabled: true, shopNewsEnabled: false, fcmToken: null, updatedAt: new Date(),
+  radiusKm: 3, regionCode: null, regionName: null, favoriteEnabled: true, shopNewsEnabled: false, fcmToken: null, updatedAt: new Date(),
 };
 
 function makeRepo(settings: NotificationSettings | null = mockSettings): INotificationRepository {

@@ -10,7 +10,7 @@ import { Errors } from '../../../shared/errors/AppError';
 
 const mockSettings: NotificationSettings = {
   userId: 'u1', nearEnabled: true, nearLat: 37.5, nearLng: 127.0,
-  radiusKm: 3, favoriteEnabled: true, shopNewsEnabled: false, fcmToken: null, updatedAt: new Date(),
+  radiusKm: 3, regionCode: null, regionName: null, favoriteEnabled: true, shopNewsEnabled: false, fcmToken: null, updatedAt: new Date(),
 };
 
 function makeReq(overrides: Partial<Request> = {}): Request {

@@ -17,6 +17,12 @@ export class UpdateSettingsUseCase {
         && (typeof input.regionCode !== 'string' || input.regionCode.length > 40)) {
       throw Errors.validation({ regionCode: '관심 동네 코드가 올바르지 않습니다' });
     }
+    // 기준점 좌표는 관심 동네와 함께 올 때만 저장한다. 구버전 앱의 "내 주변 알림"은 기기 GPS를 보내는데,
+    // 서버에 GPS를 남기지 않기로 했다(위치기반서비스 신고 검토, 2026-10-27) → 좌표·켜기만 무시.
+    if (!input.regionCode && (input.nearLat !== undefined || input.nearLng !== undefined)) {
+      const { nearLat: _lat, nearLng: _lng, nearEnabled: _on, ...rest } = input;
+      input = rest;
+    }
     return this.notifRepo.upsertSettings(userId, input);
   }
 }

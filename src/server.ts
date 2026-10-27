@@ -59,7 +59,17 @@ if (require.main === module) {
          ADD COLUMN IF NOT EXISTS region_code TEXT,
          ADD COLUMN IF NOT EXISTS region_name TEXT`,
     )
-    .catch((err) => logger.error({ err }, 'interest region columns ensure failed'));
+    // 예전 "내 주변 알림"이 저장한 기기 GPS 좌표 삭제(관심 동네 없이 저장된 좌표 = GPS). 사용자 요청 2026-10-27.
+    // 위치기반서비스사업 신고 대상이 되지 않도록 서버에 GPS를 남기지 않는다. 매 기동 실행해도 같은 결과(멱등).
+    .then(() =>
+      getRdsPool().query(
+        `UPDATE notification_settings
+         SET near_lat = NULL, near_lng = NULL, near_enabled = false, updated_at = NOW()
+         WHERE region_code IS NULL AND (near_lat IS NOT NULL OR near_lng IS NOT NULL)`,
+      ),
+    )
+    .then((r) => logger.info({ cleared: r.rowCount }, 'legacy GPS near coords cleared'))
+    .catch((err) => logger.error({ err }, 'interest region columns ensure / GPS cleanup failed'));
 
   const server = app.listen(port, () => {
     logger.info(`Syak backend running on port ${port} [${process.env.NODE_ENV ?? 'development'}]`);

@@ -39,16 +39,17 @@ export class ShopSyncService {
     const n = Math.min(Math.max(topN, 1), 100);
     const { rows } = await this.rds.query(
       `WITH ranked AS (
-         SELECT category, gu, name, min_price, price_tier, has_event, first_visit_deal,
+         SELECT id, category, gu, name, min_price, price_tier, has_event, first_visit_deal,
                 today_open, review_count,
                 detail->>'roadAddress' AS road, detail->'menus' AS menus,
+                COALESCE(detail->'images'->'gallery'->>0, representative_image) AS photo,
                 ROW_NUMBER() OVER (PARTITION BY category, gu
                                    ORDER BY review_count DESC NULLS LAST) AS rn
          FROM shops
          WHERE category = ANY($1::text[]) AND gu IS NOT NULL AND name IS NOT NULL
        )
-       SELECT category, gu, name, min_price, price_tier, has_event, first_visit_deal,
-              today_open, review_count, road, menus
+       SELECT id, category, gu, name, min_price, price_tier, has_event, first_visit_deal,
+              today_open, review_count, road, menus, photo
        FROM ranked WHERE rn <= $2
        ORDER BY category, gu, review_count DESC NULLS LAST`,
       [categories, n],
@@ -69,10 +70,11 @@ export class ShopSyncService {
         .sort((a: Record<string, unknown>, b: Record<string, unknown>) => Number(a.price) - Number(b.price));
       const real = pick.slice(0, 3).map((m: Record<string, unknown>) => ({ n: String(m.name), p: Number(m.price) }));
       return {
-        category: r.category, gu: r.gu, name: r.name, min_price: r.min_price,
+        id: r.id, category: r.category, gu: r.gu, name: r.name, min_price: r.min_price,
         price_tier: r.price_tier, has_event: r.has_event, first_visit_deal: r.first_visit_deal,
         today_open: r.today_open, review_count: r.review_count,
         road: r.road ?? null, menus: real,
+        photo: r.photo ?? null, // SEO 페이지 사진 캐러셀·og:image (첫 갤러리 사진, 없으면 대표 이미지)
       };
     });
   }

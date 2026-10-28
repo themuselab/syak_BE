@@ -113,10 +113,27 @@ export class ShopSyncService {
 
   // ── 가격 동기화(price_sync) ──────────────────────────────────
   /** 가격 갱신 대상: detail 있는 샵, price_synced_at 오래된 순 */
+  /**
+   * price_sync 대상. 네이버 플레이스는 IP당 요청 한도가 있어 하루 갱신량이 정해져 있다(2026-10-28)
+   * → 손님 눈에 띄는 샵(파트너·즐겨찾기·빈자리 있음)은 하루 지나면 먼저, 나머지는 2주에 한 번꼴로.
+   * reviewsSyncedAt: 리뷰는 7일에 한 번만 받는다(샵당 요청 2→1장).
+   */
   async getPriceTargets(limit: number): Promise<Record<string, unknown>[]> {
     const { rows } = await this.rds.query(
-      `SELECT id, category FROM shops WHERE detail IS NOT NULL
-       ORDER BY price_synced_at ASC NULLS FIRST LIMIT $1`, [Math.min(Math.max(limit, 1), 2000)],
+      `SELECT id, category, detail->>'reviewsSyncedAt' AS reviews_synced_at
+         FROM shops s
+        WHERE detail IS NOT NULL
+        ORDER BY
+          CASE
+            WHEN (is_partner OR today_open OR jsonb_array_length(COALESCE(slot_summary, '[]'::jsonb)) > 0
+                  OR EXISTS (SELECT 1 FROM favorites f WHERE f.shop_id = s.id))
+                 AND (price_synced_at IS NULL OR price_synced_at < now() - interval '1 day') THEN 0
+            WHEN price_synced_at IS NULL THEN 1
+            WHEN price_synced_at < now() - interval '14 days' THEN 2
+            ELSE 3
+          END,
+          price_synced_at ASC NULLS FIRST
+        LIMIT $1`, [Math.min(Math.max(limit, 1), 2000)],
     );
     return rows;
   }
@@ -158,10 +175,12 @@ export class ShopSyncService {
 
   /** 상세 보강(price_sync.py): 영업시간·평점·최근 리뷰를 detail JSON에 합친다.
    *  보낸 키만 덮어쓴다(없는 키는 기존 값 보존) — 수집 실패한 항목이 지워지지 않게. */
-  async updateDetails(rows: { id: string; businessHours?: unknown; rating?: number | null; reviews?: unknown }[]): Promise<number> {
+  async updateDetails(rows: { id: string; businessHours?: unknown; rating?: number | null; reviews?: unknown; reviewsChecked?: boolean }[]): Promise<number> {
     let n = 0;
     for (const r of rows) {
       const patch: Record<string, unknown> = {};
+      // 리뷰 페이지를 이번에 확인했으면(리뷰가 없어도) 시각을 남겨 7일간 다시 안 받게 한다
+      if (r.reviewsChecked) patch.reviewsSyncedAt = new Date().toISOString();
       if (Array.isArray(r.businessHours)) patch.businessHours = r.businessHours;
       if (typeof r.rating === 'number' && r.rating > 0) patch.rating = r.rating;
       if (Array.isArray(r.reviews) && r.reviews.length) patch.reviews = r.reviews;

@@ -17,6 +17,17 @@
 
 ## 아키텍처
 
+![백엔드 아키텍처](docs/diagrams/architecture.png)
+
+> 노드별 소스 위치까지 보이는 인터랙티브 버전: [docs/diagrams/architecture.html](docs/diagrams/architecture.html) (내려받아 브라우저로 열기)
+
+- **소비자 앱·웹 / 사장님 웹**: `/api/v1` 요청이 JWT 쿠키 인증(일부 공개 경로 제외)을 거쳐 소비자·사장님 컨텍스트로 가고, 모든 데이터는 AWS RDS(PostgreSQL)에 있다.
+- **스크래퍼**: 다른 repo의 GitHub Actions가 `X-Internal-Key`로 `/internal/*`를 호출해 슬롯을 RDS에 동기화하고, 새 빈자리는 Expo Push로 알림을 보낸다.
+- **관리자 SPA**: `syak_admin` 세션 쿠키로 `/admin/*`에 접근하고, 통계는 GA4 Data API, 마케팅 이미지는 S3를 쓴다.
+- **배포**: `master` push → GitHub Actions → ECR → ECS(EC2) 서비스 `syak-backend`.
+
+### 디렉터리 구조
+
 ```
 src/
 ├── app/

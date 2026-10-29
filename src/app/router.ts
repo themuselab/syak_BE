@@ -20,7 +20,7 @@ export function buildRouter(controllers: Controllers): Router {
   router.use('/shops',         catalogRouter(controllers.catalog));
   router.use('/slots',         reservationRouter(controllers.reservation));
   router.use('/favorites',     favoriteRouter(controllers.favorite));
-  router.use('/notifications', notificationRouter(controllers.notification));
+  router.use('/notifications', notificationRouter(controllers.notification, controllers.slotAlert));
   router.use('/users',         userRouter(controllers.user));
   router.use('/owner',         ownerRouter(controllers.ownerAuth, controllers.ownerSlots, controllers.analytics, controllers.ownerDashboard));
   router.use('/web',           webRouter(controllers.webCatalog));  // 소비자 웹 raw 카탈로그(RDS)

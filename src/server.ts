@@ -9,6 +9,7 @@ import { buildControllers, buildDependencies } from './app/composition-root';
 import { buildRouter } from './app/router';
 import { logger } from './shared/logger';
 import { closePool, getRdsPool } from './shared/lib/database';
+import { SLOT_ALERTS_MIGRATION_SQL } from './contexts/notification/infrastructure/slotAlertsMigration';
 
 // CSRF 미제거 이유: 이 API는 네이티브 모바일 앱 전용.
 // 브라우저는 제3자 사이트의 요청에 쿠키를 자동 첨부하여 CSRF가 위험하지만,
@@ -70,6 +71,13 @@ if (require.main === module) {
     )
     .then((r) => logger.info({ cleared: r.rowCount }, 'legacy GPS near coords cleared'))
     .catch((err) => logger.error({ err }, 'interest region columns ensure / GPS cleanup failed'));
+
+  // 빈자리 알림 신청(2026-10-29): slot_alerts 테이블·인덱스 + notifications.type 에 'alert' 허용.
+  // 전부 IF NOT EXISTS / 조건부라 매 기동 실행해도 같은 결과(db/migration_slot_alerts.sql 동일).
+  getRdsPool()
+    .query(SLOT_ALERTS_MIGRATION_SQL)
+    .then(() => logger.info('slot_alerts schema ensured'))
+    .catch((err) => logger.error({ err }, 'slot_alerts schema ensure failed'));
 
   const server = app.listen(port, () => {
     logger.info(`Syak backend running on port ${port} [${process.env.NODE_ENV ?? 'development'}]`);

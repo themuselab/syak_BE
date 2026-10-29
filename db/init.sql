@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   shop_id    TEXT NOT NULL,
   shop_name  TEXT NOT NULL,
-  type       TEXT NOT NULL CHECK (type IN ('favorite', 'near')),
+  type       TEXT NOT NULL CHECK (type IN ('favorite', 'near', 'alert')),
   slot_time  TEXT NOT NULL,
   slot_date  DATE NOT NULL,
   read_at    TIMESTAMPTZ,

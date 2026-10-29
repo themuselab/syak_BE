@@ -92,6 +92,9 @@ import { RegisterDeviceUseCase } from '../contexts/notification/application/Regi
 import { ListAppNewsUseCase } from '../contexts/notification/application/ListAppNewsUseCase';
 import { PublishAppNewsUseCase } from '../contexts/notification/application/PublishAppNewsUseCase';
 import { NotificationController } from '../contexts/notification/interface/NotificationController';
+import { PgSlotAlertRepository } from '../contexts/notification/infrastructure/PgSlotAlertRepository';
+import { CreateSlotAlertsUseCase, ListSlotAlertsUseCase, DeleteSlotAlertsUseCase } from '../contexts/notification/application/SlotAlertUseCases';
+import { SlotAlertController } from '../contexts/notification/interface/SlotAlertController';
 
 // User
 import { PgUserProfileRepository } from '../contexts/user/infrastructure/PgUserProfileRepository';
@@ -109,6 +112,7 @@ export interface Controllers {
   shopInternal: ShopInternalController;
   favorite: FavoriteController;
   notification: NotificationController;
+  slotAlert: SlotAlertController;
   user: UserController;
   ownerAuth: OwnerAuthController;
   ownerInternal: OwnerInternalController;
@@ -195,7 +199,14 @@ export function buildDependencies(): AppDependencies {
   const notifRepo = new PgNotificationRepository(rds);
   const appNewsRepo = new PgAppNewsRepository(rds);
   const pushService = new ExpoPushService(); // 소비자 앱 expo-notifications 전환 → Expo Push 발송
-  const dispatchUseCase = new DispatchSlotNotificationsUseCase(notifRepo, pushService);
+  const slotAlertRepo = new PgSlotAlertRepository(rds);
+  // 즐겨찾기/관심동네 대상 + 빈자리 알림 신청자를 샵 단위로 합쳐 1번만 발송
+  const dispatchUseCase = new DispatchSlotNotificationsUseCase(notifRepo, pushService, slotAlertRepo);
+  const slotAlertController = new SlotAlertController(
+    new CreateSlotAlertsUseCase(slotAlertRepo),
+    new ListSlotAlertsUseCase(slotAlertRepo),
+    new DeleteSlotAlertsUseCase(slotAlertRepo),
+  );
   const notificationController = new NotificationController(
     new GetNotificationsUseCase(notifRepo),
     new GetSettingsUseCase(notifRepo),
@@ -269,6 +280,7 @@ export function buildDependencies(): AppDependencies {
     shopInternal: shopInternalController,
     favorite: favoriteController,
     notification: notificationController,
+    slotAlert: slotAlertController,
     user: userController,
     ownerAuth: ownerAuthController,
     ownerInternal: ownerInternalController,

@@ -109,7 +109,8 @@ export class PgSlotRepository implements ISlotRepository {
 
   /**
    * 스크래퍼 동기화: 날짜창의 scraper 슬롯을 비우고 새로 채운다.
-   * 새로 생긴(오늘) 슬롯 목록을 반환 → 스크래퍼가 알림 발송에 사용.
+   * 새로 생긴 슬롯 목록(날짜창 전체: 오늘~모레)을 반환 → 스크래퍼가 알림 발송에 사용.
+   * 즐겨찾기·주변 알림은 백엔드 dispatch가 오늘만 쓰고, 내일·모레는 '빈자리 알림 신청'(slot_alerts)에 쓰인다.
    */
   async syncScraperWindow(
     startDate: string, endDate: string, shopIds: string[], slots: Slot[],
@@ -117,16 +118,15 @@ export class PgSlotRepository implements ISlotRepository {
     const client = await this.rds.connect();
     try {
       await client.query('BEGIN');
-      const todayKst = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
-
-      // 오늘 기존 슬롯(신규 판별용)
+      // 날짜창의 기존 슬롯(신규 판별용)
       const { rows: existing } = await client.query(
-        `SELECT shop_id, to_char(start_time,'HH24:MI') AS t
-         FROM slots WHERE source='scraper' AND date=$1 AND shop_id = ANY($2::text[])`,
-        [todayKst, shopIds.length ? shopIds : ['']],
+        `SELECT shop_id, to_char(date,'YYYY-MM-DD') AS d, to_char(start_time,'HH24:MI') AS t
+         FROM slots WHERE source='scraper' AND date BETWEEN $1 AND $2 AND shop_id = ANY($3::text[])`,
+        [startDate, endDate, shopIds.length ? shopIds : ['']],
       );
-      const existingSet = new Set(existing.map(r => `${r.shop_id}|${r.t}`));
-      const existingShops = new Set(existing.map(r => r.shop_id as string)); // 오늘 기존 슬롯이 있던 샵
+      const existingSet = new Set(existing.map(r => `${r.shop_id}|${r.d}|${r.t}`));
+      // 그 날짜에 기존 슬롯이 있던 샵만 — 새 날짜가 창에 처음 들어올 때(자정 넘김) 전부 '신규'로 잡혀 알림이 쏟아지는 것 방지
+      const existingShopDates = new Set(existing.map(r => `${r.shop_id}|${r.d}`));
 
       // 창 비우기 (해당 샵)
       if (shopIds.length) {
@@ -164,9 +164,9 @@ export class PgSlotRepository implements ISlotRepository {
 
       await client.query('COMMIT');
 
-      // 신규 = 오늘 슬롯 중, 그 샵이 오늘 기존 슬롯을 갖고 있었고(초기적재 제외) 없던 시간대
+      // 신규 = 그 샵·날짜에 기존 슬롯이 있었고(초기적재 제외) 없던 시간대
       const newSlots = clean.filter(s =>
-        s.date === todayKst && existingShops.has(s.shopId) && !existingSet.has(`${s.shopId}|${s.startTime}`),
+        existingShopDates.has(`${s.shopId}|${s.date}`) && !existingSet.has(`${s.shopId}|${s.date}|${s.startTime}`),
       );
       return { inserted, newSlots };
     } catch (err) {

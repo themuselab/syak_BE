@@ -72,11 +72,10 @@ export class DispatchSlotNotificationsUseCase {
       const slots = sortSlots(rawSlots);
       const generalSlots = todayOnly ? slots.filter((s) => s.date === today) : slots;
 
-      const [favoriteTargets, nearTargets, alertMatches] = await Promise.all([
+      // 관심 동네(near) 기준 알림은 보내지 않는다(2026-10-31) — 알림 대상은 즐겨찾기 + 빈자리 알림 신청자만.
+      // 예전에 near_enabled를 켜둔 사용자도 여기서 걸러진다.
+      const [favoriteTargets, alertMatches] = await Promise.all([
         generalSlots.length > 0 ? this.notifRepo.findFavoriteTargets(event.shopId) : Promise.resolve([]),
-        generalSlots.length > 0 && event.shopLat && event.shopLng
-          ? this.notifRepo.findNearbyTargets(event.shopLat, event.shopLng)
-          : Promise.resolve([]),
         this.slotAlertRepo
           ? this.slotAlertRepo.findActiveMatches(event.shopId, slots).catch((err) => {
               logger.warn({ err, shopId: event.shopId }, 'Slot alert lookup failed — continuing without');
@@ -85,9 +84,9 @@ export class DispatchSlotNotificationsUseCase {
           : Promise.resolve([]),
       ]);
 
-      // 유저 단위로 합친다 — 즐겨찾기+주변+신청이 겹쳐도 샵당 푸시 1번
+      // 유저 단위로 합친다 — 즐겨찾기+신청이 겹쳐도 샵당 푸시 1번
       const recipients = new Map<string, Recipient>();
-      for (const t of [...favoriteTargets, ...nearTargets]) {
+      for (const t of favoriteTargets) {
         if (!recipients.has(t.userId)) {
           recipients.set(t.userId, { userId: t.userId, fcmToken: t.fcmToken, type: t.type, alertSlots: [], alertIds: [] });
         }

@@ -44,7 +44,7 @@
 | `id` | string | 알림 ID |
 | `shopId` | string | 샵 ID |
 | `shopName` | string | 샵 이름 |
-| `type` | string | 알림 종류: `favorite` (즐겨찾기 샵) \| `near` (근처 샵) \| `alert` (빈자리 알림 신청) |
+| `type` | string | 알림 종류: `favorite` (즐겨찾기 샵) \| `near` (근처 샵 — 2026-10-31부터 새로 생기지 않음, 과거 기록만) \| `alert` (빈자리 알림 신청) |
 | `slotTime` | string | 슬롯 시각 (`HH:mm`) |
 | `slotDate` | string | 슬롯 날짜 (`YYYY-MM-DD`) |
 | `readAt` | string \| null | 읽은 시각 (`null`이면 미읽음) |
@@ -90,7 +90,7 @@
 
 | 필드 | 타입 | 설명 |
 |---|---|---|
-| `nearEnabled` | boolean | 근처 샵 알림 활성화 |
+| `nearEnabled` | boolean | 근처 샵 알림 활성화 — **2026-10-31부터 사용 안 함**: 발송(dispatch)이 near 대상을 보지 않는다. 알림은 즐겨찾기 + 빈자리 알림 신청만 |
 | `nearLat` / `nearLng` | number \| null | 근처 알림 기준 위치 |
 | `radiusKm` | number | 근처 알림 반경 (km) |
 | `favoriteEnabled` | boolean | 즐겨찾기 샵 알림 활성화 |

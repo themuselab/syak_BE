@@ -268,6 +268,43 @@ Response **204**. **호출자 본인의 row만** 삭제(남의 id는 조용히 �
    - 그 외 대상자는 기존 문구 `오늘 10:00 · 11:00 예약 가능`.
 4. 알림 목록 row 저장(신청 매칭은 `type: "alert"`), 푸시 시도 후 매칭된 신청을 `notified_at = now()`로 종료.
    푸시 실패·FCM 토큰 없음이어도 종료 처리(알림 목록에는 남음).
+5. 푸시 `data`에 저장된 알림 id(`notificationId`)를 넣고, Expo가 접수하면 `notifications.pushed_at`을 기록한다(아래 "푸시 열림 추적").
 
 > 주의: 스크래퍼는 현재 **오늘 새 빈자리만** dispatch 한다. 내일/모레 신청은 사장님 빈자리 등록(전 날짜 dispatch)으로만 매칭되며,
 > 스크래퍼가 내일/모레 diff도 보내면 자동으로 매칭된다(즐겨찾기/관심동네는 계속 오늘만).
+
+---
+
+## 푸시 열림 추적 (2026-11-01)
+
+### 푸시 `data` payload
+
+빈자리 푸시(`DispatchSlotNotificationsUseCase`)의 `data`(모두 문자열):
+
+| 키 | 설명 |
+|---|---|
+| `shopId` | 샵 ID (기존) |
+| `slotDate` | 첫 슬롯 날짜 `YYYY-MM-DD` (기존) |
+| `slotTime` | 첫 슬롯 시각 `HH:mm` (기존) |
+| `notificationId` | **신규.** 이 푸시와 함께 저장된 `notifications.id`(uuid). 알림 row 저장에 실패한 경우(신청 알림만 푸시는 감)에는 **키가 없음** |
+
+### PATCH `/api/v1/notifications/:id/opened` — 푸시 탭 열림 보고 🔑
+
+앱이 푸시를 탭해 열렸을 때 `data.notificationId`로 호출(1회 권장, 여러 번 불러도 됨).
+
+- `opened_at`이 비어 있으면 지금 시각으로, `read_at`도 비어 있으면 함께 채운다. **멱등** — 이미 채워져 있으면 그대로.
+- 본인 알림만 갱신. 남의/없는 id도 **204**(조용히 무시).
+- Response **204**. id가 uuid 형식이 아니면 `VALIDATION_ERROR`(400). 비로그인은 401.
+
+### `notifications` 추적 컬럼
+
+| 컬럼 | 채우는 시점 | 의미 |
+|---|---|---|
+| `created_at` | 알림 row 저장 | 알림 생성(푸시 시도 전) |
+| `pushed_at` | Expo Push API가 메시지를 **접수**(ticket `status: "ok"`)한 직후 | 푸시 발송 성공. 토큰 없음/구 FCM 토큰/Expo 오류면 NULL |
+| `opened_at` | 앱이 `PATCH /:id/opened` 호출 | 사용자가 푸시를 탭해 앱을 엶 |
+| `read_at` | `PATCH /:id/read`, 샵 일괄 읽음, 또는 opened | 읽음 |
+
+> **`delivered`(기기 도달)는 측정할 수 없다.** Expo는 APNs/FCM에 넘긴 것까지만 확인해 준다(receipt도 "APNs/FCM이 받았다"까지).
+> 기기가 꺼져 있거나 알림 권한이 꺼진 경우를 서버는 알 수 없다. 그래서 오픈율은 `opened / pushed`로 계산한다.
+> 열림 보고는 앱이 `notificationId`로 호출해야 쌓인다(앱 업데이트 전 버전은 opened 가 0).

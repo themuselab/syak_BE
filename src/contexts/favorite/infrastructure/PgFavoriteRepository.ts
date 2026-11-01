@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { IFavoriteRepository } from '../ports/IFavoriteRepository';
+import { IFavoriteRepository, FavoriteAction } from '../ports/IFavoriteRepository';
 import { Favorite } from '../domain/Favorite';
 
 export class PgFavoriteRepository implements IFavoriteRepository {
@@ -40,6 +40,13 @@ export class PgFavoriteRepository implements IFavoriteRepository {
     await this.pool.query(
       'DELETE FROM favorites WHERE user_id = $1 AND shop_id = $2',
       [userId, shopId],
+    );
+  }
+
+  async recordEvent(userId: string, shopId: string, action: FavoriteAction): Promise<void> {
+    await this.pool.query(
+      'INSERT INTO favorite_events (user_id, shop_id, action) VALUES ($1, $2, $3)',
+      [userId, shopId, action],
     );
   }
 

@@ -9,6 +9,8 @@ import { ListAppNewsUseCase } from '../application/ListAppNewsUseCase';
 import { PublishAppNewsUseCase } from '../application/PublishAppNewsUseCase';
 import { Errors } from '../../../shared/errors/AppError';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class NotificationController {
   constructor(
     private readonly getNotifications: GetNotificationsUseCase,
@@ -45,6 +47,17 @@ export class NotificationController {
   markRead = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       await this.markReadUC.execute(req.params.id, req.user!.sub);
+      res.status(204).send();
+    } catch (err) { next(err); }
+  };
+
+  /** 푸시 탭으로 앱이 열림 — opened_at(+read_at) 기록. 멱등, 남의/없는 알림이어도 204 */
+  markOpened = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!UUID_RE.test(req.params.id ?? '')) {
+        return next(Errors.validation({ id: '알림 id 형식이 올바르지 않습니다' }));
+      }
+      await this.markReadUC.executeOpened(req.params.id, req.user!.sub);
       res.status(204).send();
     } catch (err) { next(err); }
   };

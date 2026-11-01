@@ -10,6 +10,7 @@ import { buildRouter } from './app/router';
 import { logger } from './shared/logger';
 import { closePool, getRdsPool } from './shared/lib/database';
 import { SLOT_ALERTS_MIGRATION_SQL } from './contexts/notification/infrastructure/slotAlertsMigration';
+import { TRACKING_MIGRATION_SQL } from './shared/lib/trackingMigration';
 
 // CSRF 미제거 이유: 이 API는 네이티브 모바일 앱 전용.
 // 브라우저는 제3자 사이트의 요청에 쿠키를 자동 첨부하여 CSRF가 위험하지만,
@@ -77,7 +78,13 @@ if (require.main === module) {
   getRdsPool()
     .query(SLOT_ALERTS_MIGRATION_SQL)
     .then(() => logger.info('slot_alerts schema ensured'))
-    .catch((err) => logger.error({ err }, 'slot_alerts schema ensure failed'));
+    .catch((err) => logger.error({ err }, 'slot_alerts schema ensure failed'))
+    // 서버 측 추적 보강(2026-11-01): favorite_events 테이블, notification_settings.region_set_at,
+    // notifications.pushed_at/opened_at. slot_alerts 인덱스를 포함하므로 위 마이그레이션 뒤에 실행한다.
+    // 전부 IF NOT EXISTS 라 매 기동 실행해도 같은 결과(db/migration_tracking.sql 동일). 자세히는 docs/13-tracking.md.
+    .then(() => getRdsPool().query(TRACKING_MIGRATION_SQL))
+    .then(() => logger.info('tracking schema ensured'))
+    .catch((err) => logger.error({ err }, 'tracking schema ensure failed'));
 
   const server = app.listen(port, () => {
     logger.info(`Syak backend running on port ${port} [${process.env.NODE_ENV ?? 'development'}]`);

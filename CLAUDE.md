@@ -14,6 +14,7 @@ Claude(및 개발자)가 이 레포를 다룰 때 먼저 읽는 파일.
 - [docs/09-frontend-integration.md](docs/09-frontend-integration.md) — 앱 연동(인증=쿠키, 예약수단, 알림)
 - [docs/10-marketing-automation.md](docs/10-marketing-automation.md) — 마케팅 자동 수집·이미지·쓰레드
 - [docs/11-core-issues-retrospective.md](docs/11-core-issues-retrospective.md) — 핵심 문제 점검·해결 기록
+- [docs/13-tracking.md](docs/13-tracking.md) — 추적 데이터: DB(서버 사실) vs GA4, app-metrics 지표 출처
 - [API_DOCS.md](API_DOCS.md) — 전체 API 요약
 - [README.md](README.md) — 셋업·실행·배포
 

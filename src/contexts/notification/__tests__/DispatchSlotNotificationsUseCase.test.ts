@@ -13,6 +13,8 @@ function makeRepo(favTargets: DispatchTarget[] = [], nearTargets: DispatchTarget
     insert: jest.fn().mockResolvedValue({}),
     markRead: jest.fn(),
     markShopRead: jest.fn(),
+    markPushed: jest.fn().mockResolvedValue(undefined),
+    markOpened: jest.fn().mockResolvedValue(undefined),
     getSettings: jest.fn(),
     upsertSettings: jest.fn(),
     findFavoriteTargets: jest.fn().mockResolvedValue(favTargets),

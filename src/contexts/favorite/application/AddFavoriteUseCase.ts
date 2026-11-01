@@ -2,6 +2,7 @@ import { IFavoriteRepository } from '../ports/IFavoriteRepository';
 import { IShopRepository } from '../../catalog/ports/IShopRepository';
 import { Favorite } from '../domain/Favorite';
 import { Errors } from '../../../shared/errors/AppError';
+import { recordFavoriteEvent } from './recordFavoriteEvent';
 
 export class AddFavoriteUseCase {
   constructor(
@@ -17,6 +18,8 @@ export class AddFavoriteUseCase {
     ]);
     if (exists) throw Errors.favoriteExists({ shopId });
     if (!shop) throw Errors.shopNotFound({ shopId });
-    return this.favoriteRepo.add(userId, shopId, shop.name, shop.region);
+    const favorite = await this.favoriteRepo.add(userId, shopId, shop.name, shop.region);
+    recordFavoriteEvent(this.favoriteRepo, userId, shopId, 'add');
+    return favorite;
   }
 }

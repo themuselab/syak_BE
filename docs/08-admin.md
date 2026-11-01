@@ -522,3 +522,40 @@ Content-Type: application/json
 ```
 
 > 환경변수 `INTERNAL_API_KEY`와 헤더 값이 일치하지 않으면 `INTERNAL_KEY_INVALID` (403) 반환.
+
+---
+
+## GET `/internal/app-metrics` — 디코 일일 앱 지표 리포트용
+
+`X-Internal-Key` 필요. 쿼리 `hours`(기본 24, 1~744) = 집계 창(`since` = now − hours). RDS 집계만 사용하며
+**각 항목은 쿼리가 실패하면 그 항목만 `null`**(나머지는 정상). 비율은 소수(0~1, 소수점 4자리), 분모 0/null이면 `null`.
+
+```jsonc
+{
+  "hours": 24, "since": "2026-10-31T00:00:00.000Z",
+  "users":     { "new": 3, "total": 120, "regionSet": 40, "pushDevices": 90 }, // regionSet = 현재 관심동네 설정자 누적
+  "signups": 3,                       // 신규 가입(users.created_at in window)
+  "regionSet": 2,                     // 관심 동네 첫 설정/변경(notification_settings.region_set_at in window)
+  "favorites": { "new": 5, "total": 300, "added": 6, "removed": 1 },          // added/removed = favorite_events
+  "views":     { "total": 30, "users": 8, "top": [{ "shop_id": "…", "name": "…", "views": 4 }] }, // users = 로그인 조회자
+  "notifications": { "sent": 12, "unread": 7 },                                // 알림 row 생성/미읽음
+  "slotAlerts":    { "created": 4, "notified": 2 },                            // 빈자리 알림 신청/발송완료
+  "push":          { "sent": 10, "opened": 3, "openRate": 0.3 },               // pushed_at / opened_at in window
+  "reserveClicks": { "total": 5, "users": 3 },                                 // reservation_click_events
+  "conversion":    { "viewToReserve": 0.1667 },                                // reserveClicks.total / views.total
+  "partner": {
+    "owners": 10, "linked": 6, "newOwners": 0,
+    "codesIssued": 0, "codesUsed": 0, "codesOpen": 2, "totalCodes": 12, "totalCodesUsed": 8,
+    "ownerSlotsNew": 4, "ownerSlotsTotal": 80,
+    "activePartners": 3,              // 연결된 샵 중 최근 30일 사장님 슬롯 ≥1 (hours 와 무관)
+    "ownerSlots": { "reserved": 2, "reservedLabel": "실제 예약 완료(사장님 표시 기준)" } // source='owner' AND reserved_at in window
+  },
+  "catalog": { "shops": 5000, "openSlots": 1200 }
+}
+```
+
+주의:
+- `views.users`는 2026-11-01 `optionalAuth` 적용 이후부터 의미가 있다(그 전 행은 `user_id` NULL).
+- `push.sent`는 **Expo 접수 성공**이지 기기 도달이 아니다. `push.opened`는 앱이 `PATCH /notifications/:id/opened`를 호출해야 쌓인다.
+- `regionSet`/`favorites.added|removed`/`push.*`는 컬럼·테이블이 생긴 2026-11-01 이후 이벤트만 센다.
+- 지표별 출처·한계는 [13-tracking.md](13-tracking.md).

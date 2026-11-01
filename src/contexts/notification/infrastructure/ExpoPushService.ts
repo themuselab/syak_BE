@@ -11,6 +11,8 @@ function isExpoToken(token: string): boolean {
   return token.startsWith('ExponentPushToken[') || token.startsWith('ExpoPushToken[');
 }
 
+type ExpoTicket = { status: string; id?: string; message?: string };
+
 type ExpoMessage = {
   to: string;
   title: string;
@@ -20,9 +22,10 @@ type ExpoMessage = {
 };
 
 export class ExpoPushService implements IPushService {
-  async send(token: string, payload: PushPayload): Promise<void> {
-    if (!isExpoToken(token)) return;
-    await this.post([this.toMessage(token, payload)]);
+  async send(token: string, payload: PushPayload): Promise<boolean> {
+    if (!isExpoToken(token)) return false;
+    const tickets = await this.post([this.toMessage(token, payload)]);
+    return tickets?.[0]?.status === 'ok';
   }
 
   async sendBatch(tokens: string[], payload: PushPayload): Promise<void> {
@@ -37,7 +40,8 @@ export class ExpoPushService implements IPushService {
     return { to, title: p.title, body: p.body, data: p.data ?? {}, sound: 'default' };
   }
 
-  private async post(messages: ExpoMessage[]): Promise<void> {
+  /** Expo 접수 결과(ticket) 배열. 요청 자체가 실패하면 null */
+  private async post(messages: ExpoMessage[]): Promise<ExpoTicket[] | null> {
     try {
       const res = await fetch(EXPO_PUSH_URL, {
         method: 'POST',
@@ -46,13 +50,16 @@ export class ExpoPushService implements IPushService {
       });
       if (!res.ok) {
         logger.warn({ status: res.status }, 'Expo push: non-OK response');
-        return;
+        return null;
       }
-      const json = (await res.json()) as { data?: Array<{ status: string; message?: string }> };
-      const errors = (json.data ?? []).filter((t) => t.status === 'error');
+      const json = (await res.json()) as { data?: ExpoTicket[] };
+      const tickets = json.data ?? [];
+      const errors = tickets.filter((t) => t.status === 'error');
       if (errors.length) logger.warn({ errors }, 'Expo push: some tickets errored');
+      return tickets;
     } catch (err) {
       logger.error({ err }, 'Expo push send failed');
+      return null;
     }
   }
 }

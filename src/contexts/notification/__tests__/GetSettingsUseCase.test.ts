@@ -13,6 +13,8 @@ function makeRepo(settings: NotificationSettings | null = mockSettings): INotifi
     insert: jest.fn(),
     markRead: jest.fn(),
     markShopRead: jest.fn(),
+    markPushed: jest.fn().mockResolvedValue(undefined),
+    markOpened: jest.fn().mockResolvedValue(undefined),
     getSettings: jest.fn().mockResolvedValue(settings),
     upsertSettings: jest.fn().mockResolvedValue(mockSettings),
     findFavoriteTargets: jest.fn(),

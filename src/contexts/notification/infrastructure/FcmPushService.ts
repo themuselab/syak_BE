@@ -22,13 +22,14 @@ export class FcmPushService implements IPushService {
     return this._app;
   }
 
-  async send(fcmToken: string, payload: PushPayload): Promise<void> {
-    if (!this.app) { logger.warn('FCM not configured, skipping push'); return; }
+  async send(fcmToken: string, payload: PushPayload): Promise<boolean> {
+    if (!this.app) { logger.warn('FCM not configured, skipping push'); return false; }
     await getMessaging(this.app).send({
       token: fcmToken,
       notification: { title: payload.title, body: payload.body },
       data: payload.data ?? {},
     });
+    return true;
   }
 
   async sendBatch(fcmTokens: string[], payload: PushPayload): Promise<void> {

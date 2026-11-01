@@ -120,8 +120,9 @@ export class DispatchSlotNotificationsUseCase {
 
         // 알림 row는 push 성공 여부와 무관하게 항상 저장
         let saved = false;
+        let notificationId: string | undefined;
         try {
-          await this.notifRepo.insert({
+          const row = await this.notifRepo.insert({
             userId: r.userId,
             shopId: event.shopId,
             shopName: event.shopName,
@@ -129,6 +130,7 @@ export class DispatchSlotNotificationsUseCase {
             slotTime: slotLabel,
             slotDate: first.date,
           });
+          notificationId = row?.id;
           saved = true;
           dispatched++;
         } catch (insertErr) {
@@ -141,11 +143,19 @@ export class DispatchSlotNotificationsUseCase {
         // push는 별도 try/catch — 실패해도 알림 목록에는 남음
         if (r.fcmToken) {
           try {
-            await this.pushService.send(r.fcmToken, {
+            // notificationId: 앱이 푸시 탭 시 PATCH /notifications/:id/opened 로 열림을 보고하는 데 쓴다
+            const data: Record<string, string> = { shopId: event.shopId, slotDate: first.date, slotTime: first.time };
+            if (notificationId) data.notificationId = notificationId;
+            const accepted = await this.pushService.send(r.fcmToken, {
               title: `${event.shopName}에 빈자리가 생겼어요!`,
               body,
-              data: { shopId: event.shopId, slotDate: first.date, slotTime: first.time },
+              data,
             });
+            // pushed_at = Expo 접수 성공 시각(기기 도달은 측정 불가). 기록 실패는 로그만.
+            if (accepted === true && notificationId) {
+              this.notifRepo.markPushed(notificationId).catch((err) =>
+                logger.warn({ err, notificationId }, 'Notification markPushed failed'));
+            }
           } catch (pushErr) {
             logger.warn({ pushErr, userId: r.userId, shopId: event.shopId }, 'Push send failed (notification saved)');
           }

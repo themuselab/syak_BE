@@ -12,6 +12,7 @@ function makeRepo(): IFavoriteRepository {
     exists: jest.fn(),
     add: jest.fn(),
     remove: jest.fn(),
+    recordEvent: jest.fn().mockResolvedValue(undefined),
   };
 }
 

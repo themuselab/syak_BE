@@ -1,5 +1,6 @@
 import { IFavoriteRepository } from '../ports/IFavoriteRepository';
 import { Errors } from '../../../shared/errors/AppError';
+import { recordFavoriteEvent } from './recordFavoriteEvent';
 
 export class RemoveFavoriteUseCase {
   constructor(private readonly favoriteRepo: IFavoriteRepository) {}
@@ -8,5 +9,6 @@ export class RemoveFavoriteUseCase {
     const exists = await this.favoriteRepo.exists(userId, shopId);
     if (!exists) throw Errors.favoriteNotFound({ shopId });
     await this.favoriteRepo.remove(userId, shopId);
+    recordFavoriteEvent(this.favoriteRepo, userId, shopId, 'remove');
   }
 }

@@ -15,6 +15,7 @@ export function notificationRouter(controller: NotificationController, slotAlert
 
   router.get('/',                requireAuth, controller.list);                  // CA-031
   router.patch('/:id/read',      requireAuth, controller.markRead);             // 읽음 처리
+  router.patch('/:id/opened',    requireAuth, controller.markOpened);           // 푸시 탭 열림(opened_at, 멱등)
   router.patch('/shops/:shopId/read', requireAuth, controller.markShopRead);    // 샵 알림 일괄 읽음(상세 진입)
   router.get('/settings',        requireAuth, controller.settings);             // CA-026~CA-027
   router.patch('/settings',      requireAuth, controller.updateSettingsHandler); // CA-017 CA-025~CA-027

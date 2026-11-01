@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { INotificationRepository, DispatchTarget } from '../ports/INotificationRepository';
 import { Notification, NotificationType } from '../domain/Notification';
 import { NotificationSettings, UpdateNotificationSettingsInput } from '../domain/NotificationSettings';
+import { logger } from '../../../shared/logger';
 
 const HAVERSINE_KM = `
   6371 * acos(
@@ -51,6 +52,23 @@ export class PgNotificationRepository implements INotificationRepository {
     );
   }
 
+  async markPushed(notificationId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE notifications SET pushed_at = NOW() WHERE id = $1 AND pushed_at IS NULL`,
+      [notificationId],
+    );
+  }
+
+  async markOpened(notificationId: string, userId: string): Promise<void> {
+    // 멱등: 처음 연 시각만 남긴다. 연 알림은 읽은 것이므로 read_at 도 비어 있으면 채운다.
+    await this.pool.query(
+      `UPDATE notifications
+       SET opened_at = COALESCE(opened_at, NOW()), read_at = COALESCE(read_at, NOW())
+       WHERE id = $1 AND user_id = $2 AND (opened_at IS NULL OR read_at IS NULL)`,
+      [notificationId, userId],
+    );
+  }
+
   async getSettings(userId: string): Promise<NotificationSettings | null> {
     const { rows } = await this.pool.query(
       'SELECT * FROM notification_settings WHERE user_id = $1',
@@ -88,6 +106,8 @@ export class PgNotificationRepository implements INotificationRepository {
     // 관심 동네는 따로 쓴다 — 컬럼은 기동 시 추가되는데(server.ts) 혹시 실패해도
     // 다른 알림 설정 저장까지 같이 깨지지 않게 분리했다.
     if (input.regionCode !== undefined || input.regionName !== undefined) {
+      // 첫 쿼리는 region_* 를 건드리지 않으므로 rows[0].region_code 는 변경 전 값
+      const prevRegion = (rows[0]?.region_code as string | null | undefined) ?? null;
       const { rows: r2 } = await this.pool.query(
         `UPDATE notification_settings
          SET region_code = COALESCE($2, region_code), region_name = COALESCE($3, region_name), updated_at = NOW()
@@ -95,6 +115,19 @@ export class PgNotificationRepository implements INotificationRepository {
          RETURNING *`,
         [userId, input.regionCode ?? null, input.regionName ?? null],
       );
+      // 관심 동네 첫 설정/변경 시각(region_set_at) — 추적용이라 별도 쿼리로 best-effort.
+      // 컬럼이 없거나 실패해도 설정 저장 응답은 그대로 간다.
+      const newRegion = (r2[0]?.region_code as string | null | undefined) ?? null;
+      if (newRegion && newRegion !== prevRegion) {
+        try {
+          await this.pool.query(
+            `UPDATE notification_settings SET region_set_at = NOW() WHERE user_id = $1`,
+            [userId],
+          );
+        } catch (err) {
+          logger.warn({ err, userId }, 'region_set_at update failed');
+        }
+      }
       return this.mapSettings(r2[0]);
     }
     return this.mapSettings(rows[0]);

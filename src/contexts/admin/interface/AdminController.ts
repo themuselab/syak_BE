@@ -772,16 +772,55 @@ export class AdminController {
       ).then(r => r.rows as { shop_id: string; name: string; views: number }[]).catch(() => null),
     ]);
 
+    // ── 서버 측 추적 KPI(2026-11-01, docs/13-tracking.md) — 전부 기간(since~now) 기준, 실패 항목만 null ──
+    const [
+      signups, regionSetInWindow, favAdded, favRemoved,
+      alertsCreated, alertsNotified, pushSent, pushOpened,
+      clicksTotal, clickUsers, activePartners, ownerSlotsReserved,
+    ] = await Promise.all([
+      num(`SELECT COUNT(*) FROM users WHERE created_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM notification_settings WHERE region_set_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM favorite_events WHERE action = 'add' AND created_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM favorite_events WHERE action = 'remove' AND created_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM slot_alerts WHERE created_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM slot_alerts WHERE notified_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM notifications WHERE pushed_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM notifications WHERE opened_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM reservation_click_events WHERE clicked_at >= $1`, [since]),
+      num(`SELECT COUNT(DISTINCT user_id) FROM reservation_click_events WHERE clicked_at >= $1`, [since]),
+      // 활성 파트너 = 사장님 계정에 연결된 샵 중 최근 30일 사장님 슬롯을 1개 이상 올린 샵(기간 파라미터와 무관)
+      num(`SELECT COUNT(DISTINCT oa.shop_id) FROM owner_accounts oa
+            WHERE oa.shop_id IS NOT NULL
+              AND EXISTS (SELECT 1 FROM slots s
+                           WHERE s.shop_id = oa.shop_id AND s.source = 'owner'
+                             AND s.created_at >= NOW() - INTERVAL '30 days')`),
+      num(`SELECT COUNT(*) FROM slots WHERE source = 'owner' AND reserved_at >= $1`, [since]),
+    ]);
+    const ratio = (a: number | null, b: number | null) =>
+      a == null || b == null || b === 0 ? null : Math.round((a / b) * 10000) / 10000;
+
     res.json({
       hours, since,
+      // users.regionSet = 현재 관심 동네 설정자 누적(기존). 최상위 regionSet = 기간 내 설정/변경 건수(신규).
       users: { new: newUsers, total: totalUsers, regionSet: regionUsers, pushDevices },
-      favorites: { new: newFavorites, total: totalFavorites },
+      signups,
+      regionSet: regionSetInWindow,
+      // favorites.new = favorites 테이블 기준(해제 시 행이 지워져 과소집계). added/removed = favorite_events 이력.
+      favorites: { new: newFavorites, total: totalFavorites, added: favAdded, removed: favRemoved },
+      // views.users = 로그인 조회자 수(optionalAuth 적용 후부터 집계, 비로그인 조회는 total 에만)
       views: { total: views, users: viewers, top },
       notifications: { sent: notifSent, unread: notifUnread },
+      slotAlerts: { created: alertsCreated, notified: alertsNotified },
+      // push.sent = Expo 접수 성공(pushed_at). 기기 도달(delivered)은 측정 불가. openRate = opened / sent.
+      push: { sent: pushSent, opened: pushOpened, openRate: ratio(pushOpened, pushSent) },
+      reserveClicks: { total: clicksTotal, users: clickUsers },
+      conversion: { viewToReserve: ratio(clicksTotal, views) },
       partner: {
         owners: totalOwners, linked: linkedOwners, newOwners,
         codesIssued, codesUsed, codesOpen, totalCodes, totalCodesUsed,
         ownerSlotsNew, ownerSlotsTotal,
+        activePartners,
+        ownerSlots: { reserved: ownerSlotsReserved, reservedLabel: '실제 예약 완료(사장님 표시 기준)' },
       },
       catalog: { shops: totalShops, openSlots },
     });

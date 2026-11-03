@@ -198,7 +198,7 @@ export class ShopSyncService {
   /** is_partner=true 이면서 아직 sync 안 된 샵 */
   async getPartnerUnsynced(limit: number): Promise<Record<string, unknown>[]> {
     const { rows } = await this.rds.query(
-      `SELECT id, name, gu, category FROM shops
+      `SELECT id, name, gu, category, categories FROM shops
        WHERE is_partner = true AND partner_synced_at IS NULL LIMIT $1`, [Math.min(Math.max(limit, 1), 200)],
     );
     return rows;

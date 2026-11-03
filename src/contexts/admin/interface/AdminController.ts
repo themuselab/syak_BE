@@ -309,7 +309,7 @@ export class AdminController {
           address,
           gu: naver?.gu || (address.split(' ').find((w) => /(구|시|군)$/.test(w)) ?? ''),
           phone: naver?.phone ?? '',
-          category: naver?.category || String(body.category ?? '').trim(),
+          category: naver?.category || String(body.category ?? '').split(',')[0].trim(),
           imageUrl: naver?.imageUrl ?? '',
           lat: naver?.lat ?? ref.lat ?? null,
           lng: naver?.lng ?? ref.lng ?? null,
@@ -329,6 +329,12 @@ export class AdminController {
          WHERE id = $1`,
         [placeId, partner],
       );
+      // category는 "속눈썹" 또는 "메이크업,속눈썹"처럼 여러 개 — 첫 번째가 대표 업종, 전체가 앱 필터(categories)
+      const cats = String(body.category ?? '').split(',').map((c) => c.trim()).filter(Boolean);
+      if (cats.length) {
+        await this.rds.query(`UPDATE shops SET category = $2, categories = $3::jsonb WHERE id = $1`,
+          [placeId, cats[0], JSON.stringify(cats)]);
+      }
       const code = partner && body.issueCode ? await this._issueCode(placeId) : null;
       res.json({ shopId: placeId, name, isPartner: partner, created: !found.rows.length, code });
     } catch (err) { next(err); }

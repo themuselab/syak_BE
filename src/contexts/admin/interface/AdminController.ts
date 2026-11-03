@@ -344,7 +344,8 @@ export class AdminController {
   internalListPartners = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { rows } = await this.rds.query(
-        `SELECT s.id, s.name, s.gu, s.partner_synced_at,
+        `SELECT s.id, s.name, s.gu, s.partner_synced_at, s.categories, (s.lat IS NOT NULL) AS has_coord,
+                (SELECT jsonb_agg(m->>'name') FROM jsonb_array_elements(COALESCE(s.detail->'menus', '[]'::jsonb)) m) AS menus,
                 (SELECT COUNT(*) FROM owner_accounts o WHERE o.shop_id = s.id)::int AS owners,
                 (SELECT COUNT(*) FROM slots sl WHERE sl.shop_id = s.id AND sl.source = 'owner'
                    AND sl.created_at > now() - interval '30 days')::int AS owner_slots_30d

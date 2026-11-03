@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { logger } from '../../../shared/logger';
 import { IOwnerRepository } from '../ports/IOwnerRepository';
 import { OwnerAccount, SocialProvider, OwnerSocialProfile } from '../domain/Owner';
 
@@ -62,6 +63,14 @@ export class PgOwnerRepository implements IOwnerRepository {
       'UPDATE owner_accounts SET shop_id = $2 WHERE id = $1',
       [ownerId, shopId],
     );
+    // 사장님이 코드로 샵을 연결하면 그 샵은 파트너샵 — 앱의 파트너 핀·배지·빈자리 알림이 켜진다.
+    // partner_synced_at을 비워 sync_partners(매시)가 상세를 새로 받게 한다. 실패해도 연결은 유지(로그만).
+    await this.pool
+      .query(
+        `UPDATE shops SET is_partner = true, partner_synced_at = NULL WHERE id = $1 AND is_partner IS DISTINCT FROM true`,
+        [shopId],
+      )
+      .catch((err: unknown) => logger.warn({ err, shopId }, 'linkShop: is_partner 설정 실패'));
   }
 
   async saveRefreshToken(ownerId: string, token: string, expiresAt: Date): Promise<void> {

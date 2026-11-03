@@ -559,3 +559,19 @@ Content-Type: application/json
 - `push.sent`는 **Expo 접수 성공**이지 기기 도달이 아니다. `push.opened`는 앱이 `PATCH /notifications/:id/opened`를 호출해야 쌓인다.
 - `regionSet`/`favorites.added|removed`/`push.*`는 컬럼·테이블이 생긴 2026-11-01 이후 이벤트만 센다.
 - 지표별 출처·한계는 [13-tracking.md](13-tracking.md).
+
+## 내부: 파트너샵 등록·해제 (관리자 페이지 없이, 2026-11-03)
+
+팀이 직접 쓰는 경로. `X-Internal-Key` 필요. web 레포 GitHub Actions **partner** 워크플로(버튼) 또는 `node scripts/partner.mjs`로 호출한다.
+
+| 메서드 | 경로 | 본문/결과 |
+|---|---|---|
+| POST | `/internal/partners` | `{ place, partner?: true, issueCode?: false }` → `{ shopId, name, isPartner, created, code }` |
+| GET | `/internal/partners` | `{ partners: [{ id, name, gu, partner_synced_at, owners, owner_slots_30d }] }` |
+
+- `place`: 네이버 플레이스 링크(`map.naver.com/…/place/123`, `m.place.naver.com/…/123`, `naver.me/…` 단축) 또는 숫자 ID. 샵 id = 네이버 place id.
+- DB에 없는 샵이면 네이버 장소 요약(이름·주소·전화·업종·사진·좌표)으로 만든다.
+- 등록하면 `partner_synced_at`을 비워 `sync_partners`(매시)가 상세(사진·메뉴)를 다시 받는다.
+- `issueCode: true`면 사장님 인증코드(6자리, 7일)를 함께 발급해 돌려준다.
+- 사장님이 인증코드로 샵을 연결하면 그 샵도 자동으로 `is_partner = true`가 된다(PgOwnerRepository.linkShop).
+- 앱: `is_partner`인 샵만 파트너 핀·"샥 파트너" 배지·빈자리 알림이 보인다.

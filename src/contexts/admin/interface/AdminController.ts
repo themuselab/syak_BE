@@ -68,6 +68,49 @@ async function fetchShopMap(
   }
 }
 
+// 네이버 플레이스 링크/ID → 숫자 place id. naver.me 단축 링크는 리다이렉트 주소에서 꺼낸다.
+async function resolveNaverPlaceId(input: string): Promise<string | null> {
+  const t = input.trim();
+  if (/^\d{5,}$/.test(t)) return t;
+  const pick = (u: string) => u.match(/(?:place|restaurant|hairshop|nailshop)\/(\d{5,})/)?.[1] ?? u.match(/[?&]id=(\d{5,})/)?.[1] ?? null;
+  const direct = pick(t);
+  if (direct) return direct;
+  if (/^https?:\/\/naver\.me\//.test(t)) {
+    const r = await fetch(t, { redirect: 'manual' }).catch(() => null);
+    const loc = r?.headers.get('location');
+    return loc ? pick(loc) : null;
+  }
+  return null;
+}
+
+// 네이버 지도 장소 요약(이름·주소·전화·업종·대표사진·좌표). 관리자 naverPlaceSearch와 같은 출처.
+async function fetchNaverPlaceSummary(placeId: string): Promise<{
+  name: string; address: string; gu: string; phone: string; category: string; imageUrl: string;
+  lat: number | null; lng: number | null;
+}> {
+  const raw = await fetch(`https://map.naver.com/v5/api/sites/summary/${placeId}?lang=ko`, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Referer': 'https://map.naver.com/',
+      'Accept': 'application/json, text/plain, */*',
+    },
+  });
+  if (!raw.ok) throw new Error(`Naver API ${raw.status}`);
+  const json = (await raw.json()) as Record<string, unknown>;
+  const site = (json.site ?? json) as Record<string, unknown>;
+  const address = String(site.roadAddress ?? site.address ?? '');
+  return {
+    name: String(site.name ?? ''),
+    address,
+    gu: address.split(' ').find((w) => /(구|시|군)$/.test(w)) ?? '',
+    phone: String(site.phone ?? ''),
+    category: String(site.category ?? ''),
+    imageUrl: String(site.imageUrl ?? site.thumUrl ?? ''),
+    lat: site.y != null ? Number(site.y) : null,
+    lng: site.x != null ? Number(site.x) : null,
+  };
+}
+
 export class AdminController {
   public readonly sse: AdminSSEService;
 
@@ -223,6 +266,56 @@ export class AdminController {
       const code = await this._issueCode(shopId);
       void this.sse.pushNow();
       res.status(201).json({ ...code, shopId, shopName: body.name });
+    } catch (err) { next(err); }
+  };
+
+  // ── 내부(팀 전용, X-Internal-Key): 파트너샵 등록·해제 ───────────────────
+  // 관리자 페이지 없이 팀이 직접 쓰는 경로(web 레포 partner.yml 워크플로·scripts/partner.mjs).
+  // place = 네이버 플레이스 링크(map.naver.com/…/place/123, m.place.naver.com/…/123, naver.me 단축) 또는 숫자 ID.
+  // 샵이 DB에 없으면 네이버 요약 정보로 만든다. 등록 시 partner_synced_at을 비워 sync_partners(매시)가 상세를 채운다.
+  internalSetPartner = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const body = req.body as { place?: string; partner?: boolean; issueCode?: boolean };
+      const placeId = await resolveNaverPlaceId(String(body.place ?? ''));
+      if (!placeId) return next(Errors.validation({ place: '네이버 플레이스 링크나 숫자 ID를 넣어주세요' }));
+      const partner = body.partner !== false;
+
+      const found = await this.rds.query(`SELECT id, name FROM shops WHERE id = $1`, [placeId]);
+      let name = found.rows[0]?.name as string | undefined;
+      if (!found.rows.length) {
+        if (!partner) return next(Errors.shopNotFound({ placeId }));
+        const p = await fetchNaverPlaceSummary(placeId);
+        if (!p.name) return next(Errors.shopNotFound({ placeId, reason: '네이버에서 장소를 찾지 못했어요' }));
+        await this.rds.query(
+          `INSERT INTO shops (id, name, gu, category, categories, representative_image, lat, lng, detail, today_open, is_partner)
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, jsonb_build_object('roadAddress', $9::text, 'phone', $10::text), false, true)`,
+          [placeId, p.name, p.gu, p.category, JSON.stringify(p.category ? [p.category] : []), p.imageUrl || null,
+           p.lat, p.lng, p.address, p.phone],
+        );
+        name = p.name;
+      }
+      await this.rds.query(
+        `UPDATE shops SET is_partner = $2,
+           partner_synced_at = CASE WHEN $2 THEN NULL ELSE partner_synced_at END, updated_at = now()
+         WHERE id = $1`,
+        [placeId, partner],
+      );
+      const code = partner && body.issueCode ? await this._issueCode(placeId) : null;
+      res.json({ shopId: placeId, name, isPartner: partner, created: !found.rows.length, code });
+    } catch (err) { next(err); }
+  };
+
+  /** 내부: 지금 파트너샵 목록(연결된 사장님·최근 등록 빈자리 수 포함) */
+  internalListPartners = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { rows } = await this.rds.query(
+        `SELECT s.id, s.name, s.gu, s.partner_synced_at,
+                (SELECT COUNT(*) FROM owner_accounts o WHERE o.shop_id = s.id)::int AS owners,
+                (SELECT COUNT(*) FROM slots sl WHERE sl.shop_id = s.id AND sl.source = 'owner'
+                   AND sl.created_at > now() - interval '30 days')::int AS owner_slots_30d
+           FROM shops s WHERE s.is_partner = true ORDER BY s.name`,
+      );
+      res.json({ partners: rows });
     } catch (err) { next(err); }
   };
 

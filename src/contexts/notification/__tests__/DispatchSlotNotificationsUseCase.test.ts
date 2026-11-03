@@ -111,7 +111,7 @@ describe('DispatchSlotNotificationsUseCase', () => {
 
 function makeAlertRepo(matches: SlotAlertMatch[] = []): ISlotAlertRepository {
   return {
-    shopExists: jest.fn(),
+    findShopPartner: jest.fn(),
     createMany: jest.fn(),
     listRecentByUser: jest.fn(),
     deleteMany: jest.fn(),

@@ -27,6 +27,7 @@ export const ErrorCode = {
   PARTNER_CODE_USED:     'PARTNER_CODE_USED',
   SHOP_ALREADY_LINKED:   'SHOP_ALREADY_LINKED',
   SLOT_FORBIDDEN:        'SLOT_FORBIDDEN',
+  SLOT_ALERT_PARTNER_ONLY: 'SLOT_ALERT_PARTNER_ONLY',
 
   // Admin (관리자)
   ADMIN_UNAUTHORIZED:    'ADMIN_UNAUTHORIZED',
@@ -62,6 +63,7 @@ export const KoreanMessages: Record<ErrorCodeType, string> = {
   PARTNER_CODE_USED:     '이미 사용된 인증코드입니다',
   SHOP_ALREADY_LINKED:   '이미 연결된 샵이 있습니다',
   SLOT_FORBIDDEN:        '해당 슬롯에 대한 권한이 없습니다',
+  SLOT_ALERT_PARTNER_ONLY: '빈자리 알림은 샥 파트너 샵에서만 신청할 수 있습니다',
   ADMIN_UNAUTHORIZED:    '관리자 로그인이 필요합니다',
   USER_BANNED:           '이용이 제한된 계정입니다',
   VALIDATION_ERROR:      '요청 데이터가 올바르지 않습니다',

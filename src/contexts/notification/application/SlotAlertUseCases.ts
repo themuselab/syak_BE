@@ -40,7 +40,10 @@ export class CreateSlotAlertsUseCase {
     if (Object.keys(errors).length > 0) throw Errors.validation(errors);
 
     const sid = (shopId as string).trim();
-    if (!(await this.repo.shopExists(sid))) throw Errors.shopNotFound({ shopId: sid });
+    const partner = await this.repo.findShopPartner(sid);
+    if (partner === null) throw Errors.shopNotFound({ shopId: sid });
+    // 빈자리 알림은 샥 파트너 샵 전용(2026-11). 앱은 비파트너에 진입점을 숨기지만 서버에서도 막는다.
+    if (!partner) throw Errors.slotAlertPartnerOnly({ shopId: sid });
 
     // 중복 제거 + 이미 지난 시간(오늘)은 만들지 않는다 — 만들어도 즉시 '만료'라 의미 없음
     const now = this.now();

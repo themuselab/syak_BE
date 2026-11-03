@@ -182,7 +182,7 @@
 | `GET` | `/notifications` | Cookie | 내 매장 알림 목록 (빈자리·주변) |
 | `GET` | `/notifications/settings` | Cookie | 알림 설정 조회 |
 | `PATCH` | `/notifications/settings` | Cookie | 알림 설정 변경 |
-| `POST` | `/notifications/slot-alerts` | Cookie | 빈자리 알림 신청 (샵·날짜·시간, 1회 알림 후 종료) — docs/05 |
+| `POST` | `/notifications/slot-alerts` | Cookie | 빈자리 알림 신청 (샵·날짜·시간, 1회 알림 후 종료, **샥 파트너 샵만** — 아니면 409 `SLOT_ALERT_PARTNER_ONLY`) — docs/05 |
 | `GET` | `/notifications/slot-alerts` | Cookie | 내 빈자리 알림 신청 목록 (활성 + 최근 7일 종료) |
 | `DELETE` | `/notifications/slot-alerts` | Cookie | 빈자리 알림 신청 일괄 삭제 (`{ ids }`) |
 | `POST` | `/notifications/devices` | **없음** | 익명 디바이스 등록 (앱소식 수신용 FCM 토큰) |

@@ -11,7 +11,7 @@ const now = () => NOW;
 
 function makeRepo(over: Partial<ISlotAlertRepository> = {}): ISlotAlertRepository {
   return {
-    shopExists: jest.fn().mockResolvedValue(true),
+    findShopPartner: jest.fn().mockResolvedValue(true),
     createMany: jest.fn().mockImplementation(async (_u, _s, _d, times: string[]) => times.length),
     listRecentByUser: jest.fn().mockResolvedValue([]),
     deleteMany: jest.fn().mockResolvedValue(0),
@@ -67,10 +67,26 @@ describe('CreateSlotAlertsUseCase', () => {
   });
 
   it('없는 샵 → SHOP_NOT_FOUND', async () => {
-    const repo = makeRepo({ shopExists: jest.fn().mockResolvedValue(false) });
+    const repo = makeRepo({ findShopPartner: jest.fn().mockResolvedValue(null) });
     await expect(new CreateSlotAlertsUseCase(repo, now)
       .execute('u1', { shopId: 'nope', date: '2026-10-30', times: ['10:00'] }))
       .rejects.toMatchObject({ code: ErrorCode.SHOP_NOT_FOUND, statusCode: 404 });
+  });
+
+  it('비파트너 샵 → SLOT_ALERT_PARTNER_ONLY(409), 생성 안 함', async () => {
+    const repo = makeRepo({ findShopPartner: jest.fn().mockResolvedValue(false) });
+    await expect(new CreateSlotAlertsUseCase(repo, now)
+      .execute('u1', { shopId: 'shop-2', date: '2026-10-30', times: ['10:00'] }))
+      .rejects.toMatchObject({ code: ErrorCode.SLOT_ALERT_PARTNER_ONLY, statusCode: 409 });
+    expect(repo.createMany).not.toHaveBeenCalled();
+  });
+
+  it('검증 오류가 파트너 확인보다 먼저(비파트너여도 형식 오류는 VALIDATION_ERROR)', async () => {
+    const repo = makeRepo({ findShopPartner: jest.fn().mockResolvedValue(false) });
+    await expect(new CreateSlotAlertsUseCase(repo, now)
+      .execute('u1', { shopId: 'shop-2', date: 'bad', times: ['10:00'] }))
+      .rejects.toMatchObject({ code: ErrorCode.VALIDATION_ERROR });
+    expect(repo.findShopPartner).not.toHaveBeenCalled();
   });
 
   it('KST 자정 직후에도 오늘은 KST 날짜(UTC 전날 아님)', async () => {

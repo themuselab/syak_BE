@@ -5,9 +5,9 @@ import { SlotAlertMatch, SlotAlertRecord } from '../domain/SlotAlert';
 export class PgSlotAlertRepository implements ISlotAlertRepository {
   constructor(private readonly pool: Pool) {}
 
-  async shopExists(shopId: string): Promise<boolean> {
-    const { rows } = await this.pool.query('SELECT 1 FROM shops WHERE id = $1 LIMIT 1', [shopId]);
-    return rows.length > 0;
+  async findShopPartner(shopId: string): Promise<boolean | null> {
+    const { rows } = await this.pool.query('SELECT is_partner FROM shops WHERE id = $1 LIMIT 1', [shopId]);
+    return rows.length > 0 ? rows[0].is_partner === true : null;
   }
 
   async createMany(userId: string, shopId: string, date: string, times: string[]): Promise<number> {
@@ -70,6 +70,8 @@ export class PgSlotAlertRepository implements ISlotAlertRepository {
       `SELECT a.id, a.user_id, to_char(a.slot_date, 'YYYY-MM-DD') AS slot_date, a.slot_time, ns.fcm_token
        FROM slot_alerts a
        JOIN unnest($2::date[], $3::text[]) AS e(d, t) ON a.slot_date = e.d AND a.slot_time = e.t
+       -- 빈자리 알림은 파트너 샵 전용: 파트너가 해제된 샵의 옛 신청은 더 이상 발송하지 않는다
+       JOIN shops s ON s.id = a.shop_id AND s.is_partner = true
        LEFT JOIN notification_settings ns ON ns.user_id = a.user_id
        WHERE a.shop_id = $1 AND a.notified_at IS NULL`,
       [shopId, slots.map((s) => s.date), slots.map((s) => s.time)],

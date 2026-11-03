@@ -116,6 +116,7 @@
 | `PARTNER_CODE_USED` | 409 | 이미 사용된 인증코드 |
 | `SHOP_ALREADY_LINKED` | 409 | 이미 다른 샵이 연결된 계정 |
 | `SLOT_FORBIDDEN` | 403 | 내 샵이 아닌 슬롯 접근 |
+| `SLOT_ALERT_PARTNER_ONLY` | 409 | 빈자리 알림 신청 — 샥 파트너 샵이 아님 |
 
 ### 관리자 웹
 

@@ -47,6 +47,7 @@ export const Errors = {
   partnerCodeUsed:        (d?: unknown) => new AppError(409, ErrorCode.PARTNER_CODE_USED, d),
   shopAlreadyLinked:      (d?: unknown) => new AppError(409, ErrorCode.SHOP_ALREADY_LINKED, d),
   slotForbidden:          (d?: unknown) => new AppError(403, ErrorCode.SLOT_FORBIDDEN, d),
+  slotAlertPartnerOnly:   (d?: unknown) => new AppError(409, ErrorCode.SLOT_ALERT_PARTNER_ONLY, d),
   adminUnauthorized:      (d?: unknown) => new AppError(401, ErrorCode.ADMIN_UNAUTHORIZED, d),
   userBanned:             (d?: unknown) => new AppError(403, ErrorCode.USER_BANNED, d),
 };

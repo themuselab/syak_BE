@@ -815,6 +815,7 @@ export class AdminController {
         `SELECT DISTINCT shop_id FROM (
            SELECT shop_id FROM owner_accounts WHERE shop_id IS NOT NULL
            UNION SELECT shop_id FROM partner_codes
+           UNION SELECT id FROM shops WHERE is_partner = true
          ) t`,
       ),
       this.rds.query(`SELECT COUNT(*) AS c FROM owner_accounts WHERE shop_id IS NOT NULL`),
@@ -904,7 +905,7 @@ export class AdminController {
     const [
       signups, regionSetInWindow, favAdded, favRemoved,
       alertsCreated, alertsNotified, pushSent, pushOpened,
-      clicksTotal, clickUsers, activePartners, ownerSlotsReserved,
+      clicksTotal, clickUsers, activePartners, ownerSlotsReserved, partnerShops,
     ] = await Promise.all([
       num(`SELECT COUNT(*) FROM users WHERE created_at >= $1`, [since]),
       num(`SELECT COUNT(*) FROM notification_settings WHERE region_set_at >= $1`, [since]),
@@ -923,6 +924,7 @@ export class AdminController {
                            WHERE s.shop_id = oa.shop_id AND s.source = 'owner'
                              AND s.created_at >= NOW() - INTERVAL '30 days')`),
       num(`SELECT COUNT(*) FROM slots WHERE source = 'owner' AND reserved_at >= $1`, [since]),
+      num(`SELECT COUNT(*) FROM shops WHERE is_partner = true`), // 등록된 파트너샵(앱 파트너 핀·배지·알림 대상)
     ]);
     const ratio = (a: number | null, b: number | null) =>
       a == null || b == null || b === 0 ? null : Math.round((a / b) * 10000) / 10000;
@@ -947,7 +949,7 @@ export class AdminController {
         owners: totalOwners, linked: linkedOwners, newOwners,
         codesIssued, codesUsed, codesOpen, totalCodes, totalCodesUsed,
         ownerSlotsNew, ownerSlotsTotal,
-        activePartners,
+        activePartners, partnerShops,
         ownerSlots: { reserved: ownerSlotsReserved, reservedLabel: '실제 예약 완료(사장님 표시 기준)' },
       },
       catalog: { shops: totalShops, openSlots },

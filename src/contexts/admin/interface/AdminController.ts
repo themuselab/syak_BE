@@ -68,11 +68,22 @@ async function fetchShopMap(
   }
 }
 
+type PlaceRef = { id: string; name?: string; lat?: number; lng?: number };
+
 // 네이버 플레이스 링크/ID → 숫자 place id. naver.me 단축 링크는 리다이렉트 주소에서 꺼낸다.
-async function resolveNaverPlaceId(input: string): Promise<string | null> {
+// 지도 공유 링크(map.naver.com/?pinId=…&title=…&lat=…&lng=…)는 이름·좌표도 같이 꺼낸다(요약 조회가 막혀도 등록되게).
+async function resolveNaverPlace(input: string): Promise<PlaceRef | null> {
   const t = input.trim();
-  if (/^\d{5,}$/.test(t)) return t;
-  const pick = (u: string) => u.match(/(?:place|restaurant|hairshop|nailshop)\/(\d{5,})/)?.[1] ?? u.match(/[?&]id=(\d{5,})/)?.[1] ?? null;
+  if (/^\d{5,}$/.test(t)) return { id: t };
+  const pick = (u: string): PlaceRef | null => {
+    const id = u.match(/(?:place|restaurant|hairshop|nailshop)\/(\d{5,})/)?.[1]
+      ?? u.match(/[?&](?:id|pinId)=(\d{5,})/)?.[1];
+    if (!id) return null;
+    let q: URLSearchParams | null = null;
+    try { q = new URL(u).searchParams; } catch { /* 링크가 아니면 id만 */ }
+    const num = (k: string) => { const v = Number(q?.get(k)); return q?.get(k) && Number.isFinite(v) ? v : undefined; };
+    return { id, name: q?.get('title') || undefined, lat: num('lat'), lng: num('lng') };
+  };
   const direct = pick(t);
   if (direct) return direct;
   if (/^https?:\/\/naver\.me\//.test(t)) {
@@ -275,17 +286,35 @@ export class AdminController {
   // 샵이 DB에 없으면 네이버 요약 정보로 만든다. 등록 시 partner_synced_at을 비워 sync_partners(매시)가 상세를 채운다.
   internalSetPartner = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const body = req.body as { place?: string; partner?: boolean; issueCode?: boolean };
-      const placeId = await resolveNaverPlaceId(String(body.place ?? ''));
-      if (!placeId) return next(Errors.validation({ place: '네이버 플레이스 링크나 숫자 ID를 넣어주세요' }));
+      // name/address/category는 선택 — 네이버 요약 조회가 실패할 때 대신 쓴다(나머지는 sync_partners가 채움)
+      const body = req.body as {
+        place?: string; partner?: boolean; issueCode?: boolean; name?: string; address?: string; category?: string;
+      };
+      const ref = await resolveNaverPlace(String(body.place ?? ''));
+      if (!ref) return next(Errors.validation({ place: '네이버 플레이스 링크나 숫자 ID를 넣어주세요' }));
+      const placeId = ref.id;
       const partner = body.partner !== false;
 
       const found = await this.rds.query(`SELECT id, name FROM shops WHERE id = $1`, [placeId]);
       let name = found.rows[0]?.name as string | undefined;
       if (!found.rows.length) {
         if (!partner) return next(Errors.shopNotFound({ placeId }));
-        const p = await fetchNaverPlaceSummary(placeId);
-        if (!p.name) return next(Errors.shopNotFound({ placeId, reason: '네이버에서 장소를 찾지 못했어요' }));
+        const naver = await fetchNaverPlaceSummary(placeId).catch((err: Error) => {
+          console.warn('[internalSetPartner] 네이버 요약 실패 — 입력값으로 등록', placeId, err.message);
+          return null;
+        });
+        const address = naver?.address || String(body.address ?? '').trim();
+        const p = {
+          name: naver?.name || String(body.name ?? '').trim() || ref.name || '',
+          address,
+          gu: naver?.gu || (address.split(' ').find((w) => /(구|시|군)$/.test(w)) ?? ''),
+          phone: naver?.phone ?? '',
+          category: naver?.category || String(body.category ?? '').trim(),
+          imageUrl: naver?.imageUrl ?? '',
+          lat: naver?.lat ?? ref.lat ?? null,
+          lng: naver?.lng ?? ref.lng ?? null,
+        };
+        if (!p.name) return next(Errors.validation({ name: '네이버에서 매장 정보를 못 가져왔어요. 매장 이름(name)을 같이 넣어주세요' }));
         await this.rds.query(
           `INSERT INTO shops (id, name, gu, category, categories, representative_image, lat, lng, detail, today_open, is_partner)
            VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, jsonb_build_object('roadAddress', $9::text, 'phone', $10::text), false, true)`,

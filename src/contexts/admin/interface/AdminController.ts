@@ -70,6 +70,19 @@ async function fetchShopMap(
 
 type PlaceRef = { id: string; name?: string; lat?: number; lng?: number };
 
+// 주소 → shops.gu (기존 데이터 규칙): 서울은 "강남구", 광역시는 "부산 사하구", 그 외 도는 "성남시"/"양평군"
+const METRO = ['부산', '대구', '인천', '광주', '대전', '울산'];
+function guFromAddress(address: string): string {
+  const w = address.trim().split(/\s+/);
+  const sido = (w[0] ?? '').replace(/(광역시|특별시)$/, '');
+  if (METRO.includes(sido)) {
+    const gu = w.slice(1).find((x) => /(구|군)$/.test(x));
+    return gu ? `${sido} ${gu}` : sido;
+  }
+  if (/^서울/.test(sido)) return w.slice(1).find((x) => /구$/.test(x)) ?? '';
+  return w.slice(1).find((x) => /(시|군)$/.test(x)) ?? w.slice(1).find((x) => /구$/.test(x)) ?? '';
+}
+
 // 네이버 플레이스 링크/ID → 숫자 place id. naver.me 단축 링크는 리다이렉트 주소에서 꺼낸다.
 // 지도 공유 링크(map.naver.com/?pinId=…&title=…&lat=…&lng=…)는 이름·좌표도 같이 꺼낸다(요약 조회가 막혀도 등록되게).
 async function resolveNaverPlace(input: string): Promise<PlaceRef | null> {
@@ -307,7 +320,7 @@ export class AdminController {
         const p = {
           name: naver?.name || String(body.name ?? '').trim() || ref.name || '',
           address,
-          gu: naver?.gu || (address.split(' ').find((w) => /(구|시|군)$/.test(w)) ?? ''),
+          gu: address ? guFromAddress(address) : (naver?.gu ?? ''),
           phone: naver?.phone ?? '',
           category: naver?.category || String(body.category ?? '').split(',')[0].trim(),
           imageUrl: naver?.imageUrl ?? '',
@@ -329,6 +342,13 @@ export class AdminController {
          WHERE id = $1`,
         [placeId, partner],
       );
+      // 지역(gu): address를 주면 그걸로, 아니면 비어 있을 때만 동기화된 도로명 주소로 채운다
+      const addrIn = String(body.address ?? '').trim();
+      const { rows: [cur] } = await this.rds.query(
+        `SELECT gu, detail->>'roadAddress' AS road FROM shops WHERE id = $1`, [placeId]);
+      const addr = addrIn || (!cur?.gu ? String(cur?.road ?? '') : '');
+      const newGu = addr ? guFromAddress(addr) : '';
+      if (newGu && newGu !== cur?.gu) await this.rds.query(`UPDATE shops SET gu = $2 WHERE id = $1`, [placeId, newGu]);
       // category는 "속눈썹" 또는 "메이크업,속눈썹"처럼 여러 개 — 첫 번째가 대표 업종, 전체가 앱 필터(categories)
       const cats = String(body.category ?? '').split(',').map((c) => c.trim()).filter(Boolean);
       if (cats.length) {
@@ -344,7 +364,7 @@ export class AdminController {
   internalListPartners = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { rows } = await this.rds.query(
-        `SELECT s.id, s.name, s.gu, s.partner_synced_at, s.categories, (s.lat IS NOT NULL) AS has_coord,
+        `SELECT s.id, s.name, s.gu, s.partner_synced_at, s.categories, s.detail->>'roadAddress' AS road, (s.lat IS NOT NULL) AS has_coord,
                 (SELECT jsonb_agg(m->>'name') FROM jsonb_array_elements(COALESCE(s.detail->'menus', '[]'::jsonb)) m) AS menus,
                 (SELECT COUNT(*) FROM owner_accounts o WHERE o.shop_id = s.id)::int AS owners,
                 (SELECT COUNT(*) FROM slots sl WHERE sl.shop_id = s.id AND sl.source = 'owner'

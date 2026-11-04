@@ -33,6 +33,7 @@ export function buildRouter(controllers: Controllers): Router {
   // 내부 관리 API (X-Internal-Key 필요, 서버간 통신용)
   router.post('/internal/partner-codes', requireInternalKey, controllers.ownerInternal.createCode);
   router.get('/internal/partner-engagement', requireInternalKey, controllers.admin.partnerEngagement); // 디코 리포트용
+  router.get('/internal/ga4/channels', requireInternalKey, controllers.admin.internalGa4Channels); // 유입 진단
   router.get('/internal/app-metrics', requireInternalKey, controllers.admin.appMetrics); // 디코 앱 지표 리포트
   router.post('/internal/partners', requireInternalKey, controllers.admin.internalSetPartner); // 팀이 파트너샵 등록·해제(관리자 페이지 없이)
   router.get('/internal/partners',  requireInternalKey, controllers.admin.internalListPartners);

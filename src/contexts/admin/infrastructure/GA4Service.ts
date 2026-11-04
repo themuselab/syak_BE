@@ -227,3 +227,23 @@ export async function ga4Acquisition(days = 30, limit = 15): Promise<{ source: s
     sessions: num(r.metricValues?.[0]?.value),
   }));
 }
+
+/** 유입 진단: 채널 그룹 × source/medium × 호스트(www/app/owner) 세션. start/end는 GA4 날짜 표현(yesterday, 7daysAgo…) */
+export async function ga4ChannelBreakdown(start = 'yesterday', end = 'yesterday', limit = 40): Promise<{
+  channel: string; sourceMedium: string; host: string; sessions: number;
+}[]> {
+  const [res] = await client().runReport({
+    property: property(),
+    dateRanges: [{ startDate: start, endDate: end }],
+    dimensions: [{ name: 'sessionDefaultChannelGroup' }, { name: 'sessionSourceMedium' }, { name: 'hostName' }],
+    metrics: [{ name: 'sessions' }],
+    orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+    limit,
+  });
+  return (res.rows ?? []).map(r => ({
+    channel: r.dimensionValues?.[0]?.value ?? '',
+    sourceMedium: r.dimensionValues?.[1]?.value ?? '',
+    host: r.dimensionValues?.[2]?.value ?? '',
+    sessions: num(r.metricValues?.[0]?.value),
+  }));
+}

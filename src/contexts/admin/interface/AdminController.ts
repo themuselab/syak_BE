@@ -10,7 +10,7 @@ import { s3Delete, s3PresignGet } from '../infrastructure/S3Service';
 import { replyToThread, publishThread, generateThreadsDraft, ThreadsConfigError } from '../infrastructure/ThreadsPublishService';
 import {
   ga4Overview, ga4TopShops, ga4EventCount, ga4Acquisition,
-  ga4DailyEventCount, ga4DistinctShops, ga4VisitorsDaily, ga4EventCountForShops, GA4ConfigError,
+  ga4DailyEventCount, ga4DistinctShops, ga4VisitorsDaily, ga4EventCountForShops, GA4ConfigError, ga4ChannelBreakdown,
 } from '../infrastructure/GA4Service';
 import { awsMonthToDate, awsFreeTier, AwsCostConfigError, type AwsCostResponse } from '../infrastructure/AwsCostService';
 
@@ -859,6 +859,16 @@ export class AdminController {
     ]);
     return { partnerCount: all.length, linkedCount: linked, codeCount: coded, views, clicks };
   }
+
+  /** 내부용 — GA4 유입 진단(채널×source/medium×호스트). ?start=yesterday&end=yesterday */
+  internalGa4Channels = async (req: Request, res: Response): Promise<void> => {
+    const pick = (v: unknown, d: string) => (/^(today|yesterday|\d+daysAgo|\d{4}-\d{2}-\d{2})$/.test(String(v ?? '')) ? String(v) : d);
+    try {
+      res.json({ rows: await ga4ChannelBreakdown(pick(req.query.start, 'yesterday'), pick(req.query.end, 'yesterday')) });
+    } catch (err) {
+      res.status(502).json({ code: 'GA4_FAILED', message: (err as Error).message });
+    }
+  };
 
   /** 내부용(디코 리포트 등) — 파트너샵 조회·예약클릭. period=1d|7d|30d */
   partnerEngagement = async (req: Request, res: Response): Promise<void> => {

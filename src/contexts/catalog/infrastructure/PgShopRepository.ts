@@ -21,6 +21,13 @@ function filterCacheKey(filter: ShopFilter): string {
 }
 
 /** RDS(pg) 기반 샵 리포지토리 — Supabase에서 이전. jsonb는 node-pg가 JS로 파싱. */
+// 네이버 지도 프로모션 배너(maps-cms: "네이버 예약하세요"·"간편청구" 등)는 매장 사진이 아니다.
+// 갤러리 수집 때 같이 딸려 들어와 모든 샵 사진 앞 두 장이 같은 배너로 보였다 → 응답에서 뺀다.
+const PROMO_IMG = /maps-cms|\/maps-service\.pstatic\.net\//;
+function realPhotos(v: unknown): string[] {
+  return (Array.isArray(v) ? v : []).filter((u): u is string => typeof u === 'string' && !!u && !PROMO_IMG.test(u));
+}
+
 export class PgShopRepository implements IShopRepository {
   constructor(
     private readonly rds: Pool,
@@ -187,9 +194,9 @@ export class PgShopRepository implements IShopRepository {
 
   /** 목록용 사진: 갤러리 앞 LIST_GALLERY_LIMIT장, 없으면 대표 이미지 1장. */
   private listPhotos(row: Record<string, unknown>): string[] {
-    const gallery = (row.gallery as string[] | null) ?? [];
+    const gallery = realPhotos(row.gallery);
     if (gallery.length > 0) return gallery.slice(0, LIST_GALLERY_LIMIT);
-    return row.representative_image ? [row.representative_image as string] : [];
+    return realPhotos([row.representative_image]);
   }
 
   private mapFull(row: Record<string, unknown>): Shop {
@@ -219,10 +226,8 @@ export class PgShopRepository implements IShopRepository {
         : scraped;
     const primary = reservationRoutes.find((r) => r.type === 'naver') ?? reservationRoutes[0] ?? null;
 
-    const gallery = (imgs?.gallery as string[] | null) ?? [];
-    const photos  = gallery.length > 0
-      ? gallery
-      : (row.representative_image ? [row.representative_image as string] : []);
+    const gallery = realPhotos(imgs?.gallery);
+    const photos  = gallery.length > 0 ? gallery : realPhotos([row.representative_image]);
 
     const rawMenus   = (detail?.menus as Array<Record<string, unknown>> | null) ?? [];
     const rawReviews = (detail?.reviews as Array<Record<string, unknown>> | null) ?? [];

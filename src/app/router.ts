@@ -37,6 +37,7 @@ export function buildRouter(controllers: Controllers): Router {
   router.get('/internal/app-metrics', requireInternalKey, controllers.admin.appMetrics); // 디코 앱 지표 리포트
   router.post('/internal/partners', requireInternalKey, controllers.admin.internalSetPartner); // 팀이 파트너샵 등록·해제(관리자 페이지 없이)
   router.get('/internal/partners',  requireInternalKey, controllers.admin.internalListPartners);
+  router.get('/internal/inquiries', requireInternalKey, controllers.admin.listInquiries); // 사장님 도입 문의(관리자 페이지 없이 조회, ?status=pending)
   router.post('/internal/slots/sync', requireInternalKey, controllers.slotSync.handle); // 스크래퍼 → RDS 슬롯 동기화
   router.get('/internal/slots/open-now', requireInternalKey, controllers.slotSync.openNowHandler); // 초록핀 재계산용
   router.get('/internal/shops/targets',  requireInternalKey, controllers.shopInternal.targets);   // 스크래퍼 타깃

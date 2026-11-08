@@ -7,6 +7,8 @@ import { SocialProvider } from '../domain/User';
 import { AuthToken } from '../domain/AuthToken';
 import { Errors } from '../../../shared/errors/AppError';
 import { getAdminSSE } from '../../admin/infrastructure/AdminSSEService';
+import { createHash } from 'crypto';
+import { ReviewLoginUseCase } from '../application/ReviewLoginUseCase';
 
 const ACCESS_MAX_AGE  = 15 * 60 * 1000;        // 15분
 const REFRESH_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30일 — 앱 재접속 시 재로그인 요구를 줄인다
@@ -20,7 +22,24 @@ export class AuthController {
     private readonly refreshToken: RefreshTokenUseCase,
     private readonly signOut: SignOutUseCase,
     private readonly linkAccount: LinkSocialAccountUseCase,
+    private readonly reviewLogin?: ReviewLoginUseCase,
   ) {}
+
+  loginReview = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const { username, password } = req.body ?? {};
+    if (typeof username !== 'string' || !/^[a-z0-9._-]{3,64}$/.test(username) ||
+        typeof password !== 'string' || password.length < 1 || password.length > 128) {
+      return next(Errors.validation({ credentials: '아이디와 비밀번호를 확인해 주세요' }));
+    }
+    try {
+      if (!this.reviewLogin) throw Errors.unauthorized();
+      // 신뢰 프록시 설정에 따른 req.ip 사용. 임의 X-Forwarded-For를 직접 신뢰하지 않는다.
+      const clientKey = createHash('sha256').update(req.ip ?? req.socket.remoteAddress ?? 'unknown').digest('hex');
+      const result = await this.reviewLogin.execute(username, password, clientKey);
+      this.setCookies(res, result.token);
+      res.json({ user: result.user, isNewUser: false });
+    } catch (err) { next(err); }
+  };
 
   login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const provider = req.params.provider as SocialProvider;

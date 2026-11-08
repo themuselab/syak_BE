@@ -53,6 +53,9 @@ import { RefreshTokenUseCase } from '../contexts/auth/application/RefreshTokenUs
 import { SignOutUseCase } from '../contexts/auth/application/SignOutUseCase';
 import { LinkSocialAccountUseCase } from '../contexts/auth/application/LinkSocialAccountUseCase';
 import { AuthController } from '../contexts/auth/interface/AuthController';
+import { ReviewLoginUseCase } from '../contexts/auth/application/ReviewLoginUseCase';
+import { PgReviewAccountRepository } from '../contexts/auth/infrastructure/PgReviewAccountRepository';
+import { verifyReviewPassword } from '../contexts/auth/infrastructure/reviewPassword';
 
 // Catalog
 import { PgShopRepository } from '../contexts/catalog/infrastructure/PgShopRepository';
@@ -156,6 +159,7 @@ export function buildDependencies(): AppDependencies {
     new RefreshTokenUseCase(userRepo, tokenService),
     new SignOutUseCase(userRepo),
     new LinkSocialAccountUseCase(userRepo, socialProviders),
+    new ReviewLoginUseCase(new PgReviewAccountRepository(rds), userRepo, tokenService, verifyReviewPassword),
   );
 
   // ── Analytics (RDS — 뷰/클릭 이벤트 기록) ────────────────────

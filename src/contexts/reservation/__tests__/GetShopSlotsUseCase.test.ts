@@ -10,6 +10,8 @@ function makeRepo(): ISlotRepository {
   return {
     findByShop: jest.fn().mockResolvedValue(mockSlots),
     search: jest.fn(),
+    syncScraperWindow: jest.fn().mockResolvedValue({ inserted: 0, newSlots: [] }),
+    openNowShopIds: jest.fn().mockResolvedValue([]),
   };
 }
 

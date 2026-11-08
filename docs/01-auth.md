@@ -185,3 +185,12 @@ Set-Cookie: syak_refresh=; HttpOnly; Path=/api/v1/auth/token/refresh; Max-Age=0
 - [ ] 로그아웃 후 로컬 상태 초기화 (유저 정보, 즐겨찾기 캐시 등)
 - [ ] 204 수신 후 로그인 화면으로 이동
 - [ ] `AUTH_UNAUTHORIZED`는 이미 로그아웃된 상태 → 동일하게 로그인 화면으로 이동
+# 스토어 심사용 로컬 로그인 (2026-11-08)
+
+- `POST /api/v1/auth/review/login`: `{ username, password }` → `{ user, isNewUser: false }`, 기존 `syak_access`/`syak_refresh` HttpOnly 쿠키.
+- 공개 가입 기능은 없다. 운영자가 `db/migration_review_login.sql`과 `scripts/provision-review-account.cjs`로 별도의 소비자 계정을 준비한다. 소셜 계정을 가짜로 연결하지 않으며 관리자·사장님 권한을 부여하지 않는다.
+- 비밀번호는 무작위 20자 이상을 사용하고 scrypt(salt 16바이트, key 64바이트) 해시로만 저장한다. 평문 자격증명 파일은 Git 밖에 보관한다. 요청 본문을 로그에 기록하지 않는다.
+- IP별 15분당 10회까지 시도 가능(DB 원자 카운터, 여러 프로세스 공통). 임의 전달 헤더를 직접 신뢰하지 않는다. 프록시 구성에 따라 여러 사용자가 한 버킷을 공유할 수 있다.
+- 미등록·비활성화·차단 계정이나 비밀번호 불일치는 모두 401. 요청 형식 오류 400, 시도 초과 429. 토큰·비밀번호·해시는 응답 본문에 포함하지 않는다.
+- 운영 적용 순서: 전용 계정 준비(테이블 생성 포함) → 서버 배포 → 앱 웹 배포 → 실제 로그인·즐겨찾기·로그아웃 확인 → Play Console 로그인 세부정보 등록.
+- 비밀번호 교체는 같은 아이디로 준비 스크립트를 재실행한다(기존 refresh 토큰 폐기). 계정 삭제 시 자격증명도 FK CASCADE로 삭제된다. 즉시 이용 정지는 기존 사용자 차단 기능을 사용한다.

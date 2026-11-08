@@ -7,6 +7,8 @@ function makeRepo(overrides: Partial<ISlotRepository> = {}): ISlotRepository {
   return {
     findByShop: jest.fn(),
     search: jest.fn().mockResolvedValue([]),
+    syncScraperWindow: jest.fn().mockResolvedValue({ inserted: 0, newSlots: [] }),
+    openNowShopIds: jest.fn().mockResolvedValue([]),
     ...overrides,
   };
 }

@@ -13,3 +13,8 @@ syak-ec2.pem
 
 # Archify 스킬(18MB) — 저장소엔 skills-lock.json만 두고 각자 `npx skills add tt-a1i/archify -a claude-code`로 설치
 .claude/skills/archify/
+
+# Personal Claude configuration and credentials
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/local-backup/

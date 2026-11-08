@@ -2,7 +2,7 @@
 
 모든 요청은 기존 `X-Internal-Key` 인증을 사용한다. 스키마 추가 없이 `shops.detail._partnerRefresh`에 소스별 마지막 관측 시각을 저장한다.
 
-- `GET /internal/shops/partner-targets?kind=slots|events|details&after=<id>`: 현재 파트너를 ID 오름차순으로 최대 50곳 반환. `targets[].due`는 슬롯 3분·이벤트 30분·상세 6시간 경과 여부, `next`는 다음 페이지 커서다. 미동기화 파트너는 즉시 due다.
+- `GET /internal/shops/partner-targets?kind=slots|events|details&after=<cursor>`: 현재 파트너를 해당 소스의 마지막 성공 시각·ID 오름차순으로 최대 50곳 반환. `targets[].due`는 슬롯 3분·이벤트 30분·상세 6시간 경과 여부, `next`는 다음 페이지의 불투명 커서다. 미동기화 파트너는 즉시 due다. 오래된 매장 우선으로 처리해 예산 종료 시 다음 실행에서 미처리 매장을 우선한다.
 - `POST /internal/shops/partner-refresh`: `{id, kind, observedAt, data}`. 응답 `{applied, newSlots}`. 등록 해제 또는 이미 더 최신 시각이 저장된 경우 `applied=false`다.
 - `slots.data`: `{startDate,endDate,slots:[{date,startTime}],summary}`. 날짜창 최대 3일, 슬롯 최대 5천 개. 동일 샵 행 잠금 아래 scraper 슬롯의 차이만 갱신한다. 동일 슬롯은 유지하고 없어진 슬롯·과거분 삭제 및 신규 슬롯 추가만 수행한다. owner 슬롯 및 예약 기록은 보존한다. 모든 담당자 조회 성공 이후에만 호출해야 한다.
 - `events.data`: `{event_desc,event_price}`. 정상적으로 확인된 null은 만료 이벤트 제거로 처리한다.

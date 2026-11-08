@@ -6,11 +6,18 @@ export class PartnerRefreshService {
   constructor(private readonly pool: Pool, private readonly cache: ICacheService) {}
 
   async targets(kind: RefreshKind, after: string): Promise<Record<string, unknown>[]> {
+    let cursor = { at: '', id: after };
+    if (after.startsWith('v1:')) {
+      try { cursor = JSON.parse(Buffer.from(after.slice(3), 'base64url').toString()); }
+      catch { throw new Error('Invalid refresh cursor'); }
+      if (typeof cursor.at !== 'string' || typeof cursor.id !== 'string') throw new Error('Invalid refresh cursor');
+    }
     const { rows } = await this.pool.query(
       `SELECT id, name, gu, category, categories, biz_id, item_id, biz_type, item_ids, items,
               detail->'_partnerRefresh' AS refresh
-       FROM shops WHERE is_partner = true AND id > $1
-       ORDER BY id LIMIT 50`, [after],
+       FROM shops WHERE is_partner = true
+         AND (COALESCE(detail->'_partnerRefresh'->>$3,''),id) > ($1,$2)
+       ORDER BY COALESCE(detail->'_partnerRefresh'->>$3,''),id LIMIT 50`, [cursor.at, cursor.id, kind],
     );
     const interval = { slots: 180_000, events: 1_800_000, details: 21_600_000 }[kind];
     return rows.map(r => { const at = Date.parse(r.refresh?.[kind] ?? ''); return { ...r, due: !Number.isFinite(at) || Date.now() - at >= interval }; });

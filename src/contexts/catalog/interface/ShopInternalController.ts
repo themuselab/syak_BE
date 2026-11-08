@@ -11,7 +11,10 @@ export class ShopInternalController {
       const kind = String(req.query.kind ?? 'slots');
       if (!['slots', 'events', 'details'].includes(kind)) { res.status(400).json({ code: 'VALIDATION_ERROR' }); return; }
       const targets = await this.partnerRefresh.targets(kind as RefreshKind, String(req.query.after ?? ''));
-      res.json({ targets, next: targets.length === 50 ? String(targets[targets.length - 1].id) : null });
+      const last = targets[targets.length - 1];
+      const refresh = last?.refresh as Record<string, string> | undefined;
+      const next = targets.length === 50 ? `v1:${Buffer.from(JSON.stringify({at: refresh?.[kind] ?? '', id: String(last.id)})).toString('base64url')}` : null;
+      res.json({ targets, next });
     } catch (err) { next(err); }
   };
 

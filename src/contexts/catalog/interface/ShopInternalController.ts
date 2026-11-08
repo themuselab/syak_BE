@@ -1,9 +1,29 @@
 import { Request, Response, NextFunction } from 'express';
 import { ShopSyncService } from '../infrastructure/ShopSyncService';
+import { PartnerRefreshService, RefreshKind } from '../infrastructure/PartnerRefreshService';
 
 /** 내부용(스크래퍼) — 샵 타깃/메타/요약/today_open. X-Internal-Key 필요 */
 export class ShopInternalController {
-  constructor(private readonly svc: ShopSyncService) {}
+  constructor(private readonly svc: ShopSyncService, private readonly partnerRefresh: PartnerRefreshService) {}
+
+  partnerTargets = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const kind = String(req.query.kind ?? 'slots');
+      if (!['slots', 'events', 'details'].includes(kind)) { res.status(400).json({ code: 'VALIDATION_ERROR' }); return; }
+      const targets = await this.partnerRefresh.targets(kind as RefreshKind, String(req.query.after ?? ''));
+      res.json({ targets, next: targets.length === 50 ? String(targets[targets.length - 1].id) : null });
+    } catch (err) { next(err); }
+  };
+
+  refreshPartner = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { id, kind, observedAt, data } = req.body ?? {};
+      if (!id || !['slots', 'events', 'details'].includes(kind) || typeof observedAt !== 'string' || !data || typeof data !== 'object') {
+        res.status(400).json({ code: 'VALIDATION_ERROR' }); return;
+      }
+      res.json(await this.partnerRefresh.apply(String(id), kind, observedAt, data));
+    } catch (err) { next(err); }
+  };
 
   targets = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try { res.json({ targets: await this.svc.getTargets() }); } catch (err) { next(err); }

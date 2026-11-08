@@ -42,4 +42,8 @@ export class InMemoryCacheService implements ICacheService {
   async del(key: string): Promise<void> {
     this.store.delete(key);
   }
+
+  async delPrefix(prefix: string): Promise<void> {
+    for (const key of this.store.keys()) if (key.startsWith(prefix)) this.store.delete(key);
+  }
 }

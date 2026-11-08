@@ -47,4 +47,15 @@ export class RedisCacheService implements ICacheService {
   async quit(): Promise<void> {
     await this.client.quit();
   }
+
+  async delPrefix(prefix: string): Promise<void> {
+    try {
+      let cursor = '0';
+      do {
+        const [next, keys] = await this.client.scan(cursor, 'MATCH', `${prefix}*`, 'COUNT', 100);
+        cursor = next;
+        if (keys.length) await this.client.unlink(...keys);
+      } while (cursor !== '0');
+    } catch { /* bounded TTL remains the fallback if Redis is unavailable */ }
+  }
 }

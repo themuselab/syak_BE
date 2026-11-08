@@ -11,7 +11,8 @@ export class ShopSyncService {
   async getTargets(): Promise<Record<string, unknown>[]> {
     const { rows } = await this.rds.query(
       `SELECT id, biz_id, item_id, biz_type, item_ids, items
-       FROM shops WHERE biz_id IS NOT NULL ORDER BY id`,
+       FROM shops WHERE biz_id IS NOT NULL
+       AND NOT (is_partner IS TRUE AND detail->'_partnerRefresh'->>'slots' IS NOT NULL) ORDER BY id`,
     );
     return rows;
   }
@@ -25,6 +26,7 @@ export class ShopSyncService {
       `SELECT s.id, s.biz_id, s.item_id, s.biz_type, s.item_ids, s.items
          FROM shops s
         WHERE s.biz_id IS NOT NULL
+          AND NOT (s.is_partner IS TRUE AND s.detail->'_partnerRefresh'->>'slots' IS NOT NULL)
           AND EXISTS (SELECT 1 FROM favorites f WHERE f.shop_id = s.id)
         ORDER BY s.id`,
     );
@@ -103,7 +105,7 @@ export class ShopSyncService {
       await this.rds.query(
         `UPDATE shops s SET slot_summary = v.ss
          FROM (VALUES ${values.join(',')}) AS v(id, ss)
-         WHERE s.id = v.id`,
+         WHERE s.id = v.id AND NOT (s.is_partner IS TRUE AND s.detail->'_partnerRefresh'->>'slots' IS NOT NULL)`,
         params,
       );
       n += batch.length;
@@ -123,6 +125,7 @@ export class ShopSyncService {
       `SELECT id, category, detail->>'reviewsSyncedAt' AS reviews_synced_at
          FROM shops s
         WHERE detail IS NOT NULL
+          AND NOT (is_partner IS TRUE AND detail->'_partnerRefresh'->>'details' IS NOT NULL)
         ORDER BY
           CASE
             WHEN (is_partner OR today_open OR jsonb_array_length(COALESCE(slot_summary, '[]'::jsonb)) > 0
@@ -143,7 +146,7 @@ export class ShopSyncService {
     let n = 0;
     for (const r of rows) {
       await this.rds.query(
-        `UPDATE shops SET min_price=$2, price_tier=$3, price_synced_at=COALESCE($4, now()) WHERE id=$1`,
+        `UPDATE shops SET min_price=$2, price_tier=$3, price_synced_at=COALESCE($4, now()) WHERE id=$1 AND NOT (is_partner IS TRUE AND detail->'_partnerRefresh'->>'details' IS NOT NULL)`,
         [r.id, r.min_price ?? null, r.price_tier, r.price_synced_at ?? null],
       );
       n++;
@@ -165,7 +168,7 @@ export class ShopSyncService {
       const { rowCount } = await this.rds.query(
         `UPDATE shops s SET event_desc = v.d, event_price = v.p
          FROM (VALUES ${vals.join(',')}) AS v(id, d, p)
-         WHERE s.id = v.id`,
+         WHERE s.id = v.id AND NOT (s.is_partner IS TRUE AND s.detail->'_partnerRefresh'->>'events' IS NOT NULL)`,
         params,
       );
       n += rowCount ?? 0;
@@ -186,7 +189,7 @@ export class ShopSyncService {
       if (Array.isArray(r.reviews) && r.reviews.length) patch.reviews = r.reviews;
       if (!Object.keys(patch).length) continue;
       const { rowCount } = await this.rds.query(
-        `UPDATE shops SET detail = COALESCE(detail, '{}'::jsonb) || $2::jsonb WHERE id = $1`,
+        `UPDATE shops SET detail = COALESCE(detail, '{}'::jsonb) || $2::jsonb WHERE id = $1 AND NOT (is_partner IS TRUE AND detail->'_partnerRefresh'->>'details' IS NOT NULL)`,
         [String(r.id), JSON.stringify(patch)],
       );
       n += rowCount ?? 0;

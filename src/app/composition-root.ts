@@ -64,6 +64,7 @@ import { GetShopDetailUseCase } from '../contexts/catalog/application/GetShopDet
 import { CatalogController } from '../contexts/catalog/interface/CatalogController';
 import { WebCatalogController } from '../contexts/catalog/interface/WebCatalogController';
 import { ShopSyncService } from '../contexts/catalog/infrastructure/ShopSyncService';
+import { PartnerRefreshService } from '../contexts/catalog/infrastructure/PartnerRefreshService';
 import { ShopInternalController } from '../contexts/catalog/interface/ShopInternalController';
 
 // Reservation
@@ -171,7 +172,7 @@ export function buildDependencies(): AppDependencies {
   // ── Catalog (Supabase REST API — 읽기 전용, Redis 캐시) ──────
   const shopRepo = new PgShopRepository(rds, cache);
   const webCatalogController = new WebCatalogController(rds);
-  const shopInternalController = new ShopInternalController(new ShopSyncService(rds));
+  const shopInternalController = new ShopInternalController(new ShopSyncService(rds), new PartnerRefreshService(rds, cache));
   const catalogController = new CatalogController(
     new GetShopsUseCase(shopRepo),
     new GetShopDetailUseCase(shopRepo),

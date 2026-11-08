@@ -118,6 +118,15 @@ export class PgSlotRepository implements ISlotRepository {
     const client = await this.rds.connect();
     try {
       await client.query('BEGIN');
+      // A partner is owned by the dedicated refresh job after its first successful sync.
+      // Lock the same shop rows as that job to prevent an older nationwide run overwriting it.
+      const { rows: eligible } = await client.query(
+        `SELECT id FROM shops WHERE id=ANY($1::text[])
+         AND NOT (is_partner IS TRUE AND detail->'_partnerRefresh'->>'slots' IS NOT NULL)
+         ORDER BY id FOR UPDATE`, [shopIds]);
+      const allowed = new Set(eligible.map(r => String(r.id)));
+      shopIds = shopIds.filter(id => allowed.has(id));
+      slots = slots.filter(s => allowed.has(s.shopId));
       // 날짜창의 기존 슬롯(신규 판별용)
       const { rows: existing } = await client.query(
         `SELECT shop_id, to_char(date,'YYYY-MM-DD') AS d, to_char(start_time,'HH24:MI') AS t

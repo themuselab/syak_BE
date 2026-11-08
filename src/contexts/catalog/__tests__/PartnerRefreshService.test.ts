@@ -39,6 +39,15 @@ describe('Partner refresh snapshot safety', () => {
     expect(query.mock.calls.some(([sql]) => sql === 'ROLLBACK')).toBe(true);
     expect(cache.del).not.toHaveBeenCalled();
   });
+  test('unchanged slot rows are retained instead of being deleted and inserted on every poll', async () => {
+    const { svc, query } = setup();
+    const result = await svc.apply('1', 'slots', now(), { startDate: '2026-11-08', endDate: '2026-11-10', slots: [{ date: '2026-11-08', startTime: '10:00' }], summary: [] });
+    expect(query.mock.calls.some(([sql]) => sql.startsWith('INSERT INTO slots'))).toBe(false);
+    const deletion = query.mock.calls.find(([sql]) => sql.startsWith('DELETE'))!;
+    expect(deletion[0]).toContain('NOT EXISTS');
+    expect(JSON.parse(deletion[1]![3] as string)).toEqual([{ date: '2026-11-08', startTime: '10:00' }]);
+    expect(result.newSlots).toEqual([]);
+  });
   test('detail replaces bounded arrays and keeps photo sections omitted after a failed fetch', async () => {
     const { svc, query } = setup({ images: { gallery: ['old'], review: ['review'] }, _partnerRefresh: { slots: 'previous' } });
     await svc.apply('1', 'details', now(), { detail: { reviews: [], images: { gallery: Array.from({ length: 40 }, (_, i) => `new-${i}`) } } });

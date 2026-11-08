@@ -47,12 +47,17 @@ export class PartnerRefreshService {
            WHERE shop_id=$1 AND source='scraper' AND date BETWEEN $2::date AND $3::date`, [id, startDate, endDate]);
         const keys = new Set(previous.map(r => `${r.d}|${r.t}`));
         const dates = new Set(previous.map(r => r.d));
-        await client.query(`DELETE FROM slots WHERE shop_id=$1 AND source='scraper' AND (date BETWEEN $2::date AND $3::date OR date < $2::date)`, [id, startDate, endDate]);
         const clean = [...unique.values()];
-        for (let i = 0; i < clean.length; i += 500) {
+        // Keep unchanged rows to avoid high-frequency DELETE/INSERT churn and WAL bloat.
+        await client.query(`DELETE FROM slots s WHERE shop_id=$1 AND source='scraper' AND
+          (date < $2::date OR (date BETWEEN $2::date AND $3::date AND NOT EXISTS (
+            SELECT 1 FROM jsonb_to_recordset($4::jsonb) AS r(date text,"startTime" text)
+            WHERE r.date::date=s.date AND r."startTime"::time=s.start_time)))`, [id, startDate, endDate, JSON.stringify(clean)]);
+        const added = clean.filter(s => !keys.has(`${s.date}|${s.startTime}`));
+        for (let i = 0; i < added.length; i += 500) {
           await client.query(`INSERT INTO slots(shop_id,date,start_time,source,status)
             SELECT $1, r.date::date, r."startTime"::time, 'scraper', 'waiting'
-            FROM jsonb_to_recordset($2::jsonb) AS r(date text,"startTime" text)`, [id, JSON.stringify(clean.slice(i, i + 500))]);
+            FROM jsonb_to_recordset($2::jsonb) AS r(date text,"startTime" text)`, [id, JSON.stringify(added.slice(i, i + 500))]);
         }
         for (const slot of clean) {
           if (old._partnerRefresh?.slots && dates.has(slot.date) && !keys.has(`${slot.date}|${slot.startTime}`)) newSlots.push({ shopId: id, ...slot });

@@ -83,7 +83,13 @@ if (require.main === module) {
     // notifications.pushed_at/opened_at. slot_alerts 인덱스를 포함하므로 위 마이그레이션 뒤에 실행한다.
     // 전부 IF NOT EXISTS 라 매 기동 실행해도 같은 결과(db/migration_tracking.sql 동일). 자세히는 docs/13-tracking.md.
     .then(() => getRdsPool().query(TRACKING_MIGRATION_SQL))
-    .then(() => logger.info('tracking schema ensured'))
+    .then(() => {
+      logger.info('tracking schema ensured');
+      const prune = () => getRdsPool().query("DELETE FROM analytics_events WHERE occurred_at < now() - interval '90 days'")
+        .catch(err => logger.error({ err }, 'analytics retention failed'));
+      void prune();
+      setInterval(() => { void prune(); }, 6 * 3600 * 1000).unref();
+    })
     .catch((err) => logger.error({ err }, 'tracking schema ensure failed'));
 
   const server = app.listen(port, () => {

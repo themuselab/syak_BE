@@ -25,6 +25,7 @@ export function buildRouter(controllers: Controllers): Router {
   router.use('/owner',         ownerRouter(controllers.ownerAuth, controllers.ownerSlots, controllers.analytics, controllers.ownerDashboard));
   router.use('/web',           webRouter(controllers.webCatalog));  // 소비자 웹 raw 카탈로그(RDS)
   router.use('/admin',         adminRouter(controllers.admin));
+  router.post('/analytics/events', controllers.admin.insights.collect);
 
   router.post('/inquiries', controllers.inquiry.submit);  // SO-000a
   router.get('/marketing/img/:date/:file', controllers.admin.marketingImg); // 마케팅 이미지(S3 presigned 302, 공개)

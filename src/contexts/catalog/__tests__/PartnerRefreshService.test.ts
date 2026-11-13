@@ -19,6 +19,14 @@ describe('Partner refresh snapshot safety', () => {
     expect(await svc.apply('1', 'events', now(), { event_desc: null })).toEqual({ applied: false, newSlots: [] });
     expect(query.mock.calls.some(([sql]) => sql.startsWith('UPDATE') || sql.startsWith('DELETE'))).toBe(false);
   });
+  test('detail refresh fills valid map coordinates, and ignores invalid coordinates', async () => {
+    const { svc, query } = setup();
+    await svc.apply('1', 'details', now(), { detail: {}, lat: 35.1583724, lng: 129.0609477 });
+    expect(query).toHaveBeenCalledWith('UPDATE shops SET lat=$2,lng=$3 WHERE id=$1', ['1', 35.1583724, 129.0609477]);
+    query.mockClear();
+    await svc.apply('1', 'details', now(), { detail: {}, lat: null, lng: 999 });
+    expect(query.mock.calls.some(([sql]) => sql.startsWith('UPDATE shops SET lat='))).toBe(false);
+  });
   test('older source snapshot cannot overwrite newer data', async () => {
     const { svc } = setup({ _partnerRefresh: { events: now() } });
     expect((await svc.apply('1', 'events', new Date(Date.now() - 1000).toISOString(), { event_desc: null })).applied).toBe(false);

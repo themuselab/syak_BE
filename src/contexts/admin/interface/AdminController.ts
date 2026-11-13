@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { Pool } from 'pg';
+import { InsightsController } from './InsightsController';
 import { Errors } from '../../../shared/errors/AppError';
 import { initAdminSSE, AdminSSEService } from '../infrastructure/AdminSSEService';
 import {
@@ -100,7 +101,7 @@ async function resolveNaverPlace(input: string): Promise<PlaceRef | null> {
   const direct = pick(t);
   if (direct) return direct;
   if (/^https?:\/\/naver\.me\//.test(t)) {
-    const r = await fetch(t, { redirect: 'manual' }).catch(() => null);
+    const r = await fetch(t, { redirect: 'manual', signal: AbortSignal.timeout(8000) }).catch(() => null);
     const loc = r?.headers.get('location');
     return loc ? pick(loc) : null;
   }
@@ -113,6 +114,7 @@ async function fetchNaverPlaceSummary(placeId: string): Promise<{
   lat: number | null; lng: number | null;
 }> {
   const raw = await fetch(`https://map.naver.com/v5/api/sites/summary/${placeId}?lang=ko`, {
+    signal: AbortSignal.timeout(8000),
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'Referer': 'https://map.naver.com/',
@@ -137,11 +139,13 @@ async function fetchNaverPlaceSummary(placeId: string): Promise<{
 
 export class AdminController {
   public readonly sse: AdminSSEService;
+  public readonly insights: InsightsController;
 
   constructor(
     private readonly rds: Pool,
   ) {
     this.sse = initAdminSSE(rds);
+    this.insights = new InsightsController(rds);
   }
 
   // ── 통계 인메모리 캐시 ────────────────────────────────────────
@@ -164,24 +168,6 @@ export class AdminController {
   };
 
   // ── 관리자 로그인 ─────────────────────────────────────────────
-  login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const { email, password } = req.body as { email?: string; password?: string };
-      if (!email || !password) return next(Errors.validation({ email: '이메일과 비밀번호를 입력해주세요' }));
-      if (email !== process.env.ADMIN_EMAIL || password !== process.env.ADMIN_PASSWORD) {
-        return next(Errors.adminUnauthorized());
-      }
-      const sessionToken = process.env.ADMIN_SESSION_TOKEN ?? crypto.randomBytes(32).toString('hex');
-      res.cookie('syak_admin', sessionToken, {
-        httpOnly: true,
-        secure: process.env.COOKIE_SECURE === 'true',
-        sameSite: 'strict',
-        maxAge: 8 * 60 * 60 * 1000,
-      });
-      res.json({ ok: true });
-    } catch (err) { next(err); }
-  };
-
   logout = (_req: Request, res: Response): void => {
     res.clearCookie('syak_admin');
     res.json({ ok: true });

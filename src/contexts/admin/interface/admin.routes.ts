@@ -1,16 +1,25 @@
 import { Router } from 'express';
 import { AdminController } from './AdminController';
 import { requireAdminAuth } from '../../../shared/middleware/admin-auth.middleware';
+import { adminGoogleAuth } from './AdminGoogleAuth';
 
 export function adminRouter(admin: AdminController): Router {
   const router = Router();
 
   // ── 로그인/로그아웃 (인증 불필요) ──────────────────────────────
-  router.post('/auth/login',  admin.login);
+  router.get('/auth/google/config', adminGoogleAuth.config);
+  router.post('/auth/google', adminGoogleAuth.login);
   router.post('/auth/logout', admin.logout);
 
   // ── 이하 관리자 인증 필요 ─────────────────────────────────────
   router.use(requireAdminAuth);
+
+  router.get('/insights/funnel', admin.insights.funnel);
+  router.get('/insights/ga4', admin.insights.ga);
+  router.get('/insights/integrations', admin.insights.integrations);
+  router.get('/explorer/schema', admin.insights.schema);
+  router.post('/explorer/query', admin.insights.query);
+  router.post('/partner-shops/register', admin.internalSetPartner);
 
   router.get('/events',                      admin.stream);            // SSE 실시간 (AD-002~AD-012 대시보드)
   router.get('/dashboard',                   admin.dashboardSummary);  // AD-001 (SSE fallback 초기 로드)

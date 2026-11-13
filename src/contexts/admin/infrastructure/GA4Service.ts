@@ -35,6 +35,16 @@ function property(): string {
 
 const num = (v: unknown) => Number(v ?? 0) || 0;
 
+/** Independent event totals, deliberately not presented as a sequential funnel. */
+export async function ga4EventSummary(days: number) {
+  const [report] = await client().runReport({
+    property: property(), dateRanges: [{ startDate: `${days - 1}daysAgo`, endDate: 'today' }],
+    dimensions: [{ name: 'eventName' }], metrics: [{ name: 'eventCount' }, { name: 'totalUsers' }],
+    orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }], limit: 100,
+  });
+  return (report.rows ?? []).map(r => ({ event: r.dimensionValues?.[0]?.value ?? '', count: num(r.metricValues?.[0]?.value), users: num(r.metricValues?.[1]?.value) }));
+}
+
 export interface DailyPoint { date: string; value: number }
 
 /** YYYYMMDD → YYYY-MM-DD */

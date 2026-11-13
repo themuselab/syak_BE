@@ -16,6 +16,7 @@
         { "containerPort": 3000, "hostPort": 3002, "protocol": "tcp" }
       ],
       "environment": [
+        { "name": "ADMIN_GOOGLE_CLIENT_ID", "value": "504690942323-9m1pi1ditv8agheba0r71ch19dgl43ru.apps.googleusercontent.com" },
         { "name": "NODE_ENV", "value": "production" },
         { "name": "PORT", "value": "3000" },
         { "name": "JWT_ACCESS_EXPIRES_IN", "value": "15m" },
@@ -35,9 +36,7 @@
         { "name": "SUPABASE_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:SUPABASE_SECRET_KEY::" },
         { "name": "JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:JWT_SECRET::" },
         { "name": "INTERNAL_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:INTERNAL_API_KEY::" },
-        { "name": "ADMIN_EMAIL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:ADMIN_EMAIL::" },
-        { "name": "ADMIN_PASSWORD", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:ADMIN_PASSWORD::" },
-        { "name": "ADMIN_SESSION_TOKEN", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:ADMIN_SESSION_TOKEN::" },
+        { "name": "ADMIN_SESSION_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:ADMIN_SESSION_SECRET::" },
         { "name": "FCM_SERVICE_ACCOUNT_JSON", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:FCM_SERVICE_ACCOUNT_JSON::" },
         { "name": "SUPABASE_DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:SUPABASE_DATABASE_URL::" },
         { "name": "NVIDIA_API_KEY_FLUX", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:181250800061:secret:syak/backend-SAxC45:NVIDIA_API_KEY_FLUX::" },

@@ -4,6 +4,19 @@
  * 자세한 의미는 docs/13-tracking.md.
  */
 export const TRACKING_MIGRATION_SQL = `
+CREATE TABLE IF NOT EXISTS analytics_events (
+  event_id UUID PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  event_name TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  shop_id TEXT,
+  shop_type TEXT,
+  reservation_method TEXT,
+  occurred_at TIMESTAMPTZ NOT NULL,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS analytics_events_time ON analytics_events(occurred_at);
+CREATE INDEX IF NOT EXISTS analytics_events_session ON analytics_events(session_id, occurred_at);
 -- 즐겨찾기 추가/해제 이력(favorites 는 현재 상태만 가짐 → 해제가 안 남던 문제)
 CREATE TABLE IF NOT EXISTS favorite_events (
   id         BIGSERIAL PRIMARY KEY,

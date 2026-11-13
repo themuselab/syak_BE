@@ -1,20 +1,25 @@
 # 08 — 관리자 API
 
-Syak 운영팀 전용 API입니다. **환경변수 기반 단일 계정**을 사용합니다.
+Syak 운영팀 전용 API입니다. **themuselab.contact@gmail.com Google 계정만** 허용합니다.
 
 ---
 
 ## 인증 방식
 
-이메일 + 비밀번호 로그인 → `syak_admin` 세션 쿠키 (8시간 유효).
+Google Identity Services 로그인 → 서버에서 Google 서명·audience·만료·nonce·검증된 이메일 확인 → `syak_admin` 서명 세션 쿠키 (8시간 유효).
 
 | 환경변수 | 설명 |
 |---|---|
-| `ADMIN_EMAIL` | 관리자 이메일 |
-| `ADMIN_PASSWORD` | 관리자 비밀번호 |
-| `ADMIN_SESSION_TOKEN` | 세션 쿠키 값 (재시작 후에도 동일한 값 유지용) |
+| `ADMIN_GOOGLE_CLIENT_ID` | Google Cloud 웹 애플리케이션 OAuth 클라이언트 ID |
+| `ADMIN_SESSION_SECRET` | 관리자 전용 무작위 서명 비밀키, 32자 이상. 모든 서버 인스턴스에 동일하게 설정 |
 
-> 운영 환경에서는 반드시 강도 높은 비밀번호와 무작위 session token을 사용하세요.
+`GET /api/v1/admin/auth/google/config`는 5분 유효 nonce와 HttpOnly challenge 쿠키를 발급합니다. `POST /api/v1/admin/auth/google`에 `{credential}`을 전달합니다. 인증 쿠키는 HttpOnly/SameSite=Strict, 운영에서는 Secure입니다.
+
+기존 `/auth/login` 비밀번호 경로 및 고정 토큰 인증은 제거했습니다. 기존 세션은 재로그인이 필요합니다. 소비자/사장님 JWT는 관리자 인증에 사용할 수 없습니다. 허용 이메일은 서버 상수로 고정되어 있습니다.
+
+Google Cloud 승인된 JavaScript 원본에 실제 관리자 HTTPS origin과 개발용 `http://localhost:3100`을 등록합니다. GIS popup 방식으로 redirect URI/client secret은 사용하지 않습니다. API 키나 서비스 계정 키를 OAuth 클라이언트 ID 대신 사용하면 안 됩니다. 개발 환경도 실계정으로 검증하며 설정 누락 시 로그인을 차단합니다.
+
+2026-11-13 설정: Google Cloud `syak-c2ee0`의 `SYAK Admin Web` 클라이언트. 승인 origin은 `https://admin.themuselab.kr`, `http://localhost:3100`. 테스트 사용자는 허용 계정 1개입니다. ECS task definition에 공개 client ID와 Secrets Manager `syak/backend`의 `ADMIN_SESSION_SECRET` 참조를 추가했습니다. 서명키는 기존 고정 토큰과 다르게 새로 생성했으며 소비자 JWT 비밀키와도 분리합니다. 배포 시 백엔드와 관리자 프런트를 함께 반영해야 합니다.
 
 ---
 
@@ -68,7 +73,8 @@ es.onerror = () => { /* 재연결은 브라우저가 자동 처리 */ };
 
 | 메서드 | 경로 | 인증 | 설명 |
 |---|---|---|---|
-| POST | `/admin/auth/login` | — | 관리자 로그인 |
+| GET | `/admin/auth/google/config` | — | Google 클라이언트 ID·nonce 발급 |
+| POST | `/admin/auth/google` | — | Google 토큰 검증·관리자 로그인 |
 | POST | `/admin/auth/logout` | — | 로그아웃 |
 | GET | `/admin/events` | ✅ | 실시간 SSE 스트림 |
 | GET | `/admin/dashboard` | ✅ | 대시보드 요약 (SSE fallback) |
@@ -104,11 +110,11 @@ es.onerror = () => { /* 재연결은 브라우저가 자동 처리 */ };
 
 ---
 
-## POST `/admin/auth/login`
+## POST `/admin/auth/google`
 
 **요청 Body**
 ```json
-{ "email": "admin@syak.kr", "password": "..." }
+{ "credential": "Google Identity Services가 발급한 ID token" }
 ```
 
 **응답 200**
@@ -120,8 +126,8 @@ es.onerror = () => { /* 재연결은 브라우저가 자동 처리 */ };
 **에러**
 | 코드 | 상황 |
 |---|---|
-| `VALIDATION_ERROR` | 이메일 또는 비밀번호 누락 |
-| `ADMIN_UNAUTHORIZED` | 이메일/비밀번호 불일치 |
+| `ADMIN_UNAUTHORIZED` | 토큰 검증 실패, challenge 누락 또는 만료 |
+| `ADMIN_FORBIDDEN` | 허용되지 않은 Google 이메일, 미검증 이메일 또는 nonce 불일치 |
 
 ---
 

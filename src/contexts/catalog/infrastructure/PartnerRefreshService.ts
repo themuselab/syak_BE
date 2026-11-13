@@ -79,6 +79,10 @@ export class PartnerRefreshService {
           [id, data.event_desc?.slice(0, 160) ?? null, data.event_price?.slice(0, 80) ?? null, !!data.event_desc]);
       } else {
         if (!data.detail || typeof data.detail !== 'object' || Array.isArray(data.detail)) throw new Error('Invalid detail');
+        if (typeof data.lat === 'number' && typeof data.lng === 'number' && Number.isFinite(data.lat) && Number.isFinite(data.lng)
+          && Math.abs(data.lat) <= 90 && Math.abs(data.lng) <= 180) {
+          await client.query('UPDATE shops SET lat=$2,lng=$3 WHERE id=$1', [id, data.lat, data.lng]);
+        }
         patch = { ...data.detail };
         delete patch._partnerRefresh;
         if (Array.isArray(patch.reviews)) patch.reviews = patch.reviews.slice(0, 15);

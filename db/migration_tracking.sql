@@ -26,3 +26,10 @@ ALTER TABLE notifications ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ;
 -- 지표 집계용(기간 필터)
 CREATE INDEX IF NOT EXISTS idx_slot_alerts_created ON slot_alerts(created_at);
 CREATE INDEX IF NOT EXISTS idx_view_events_time ON shop_view_events(viewed_at);
+CREATE TABLE IF NOT EXISTS analytics_events (
+  event_id UUID PRIMARY KEY, session_id TEXT NOT NULL, event_name TEXT NOT NULL,
+  platform TEXT NOT NULL, shop_id TEXT, shop_type TEXT, reservation_method TEXT,
+  occurred_at TIMESTAMPTZ NOT NULL, received_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS analytics_events_time ON analytics_events(occurred_at);
+CREATE INDEX IF NOT EXISTS analytics_events_session ON analytics_events(session_id, occurred_at);

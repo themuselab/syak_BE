@@ -1,6 +1,7 @@
 import { GoogleAuth } from 'google-auth-library';
 import { BetaAnalyticsDataClient } from '@google-analytics/data';
 import { Pool } from 'pg';
+import { gaDateRange } from './GA4Funnel';
 
 const project = () => process.env.BIGQUERY_PROJECT_ID || 'syak-c2ee0';
 const dataset = 'syak_reporting';
@@ -78,12 +79,11 @@ export async function syncGaReports(pool: Pool, force = false) {
     await db.query(REPORT_MIGRATION);
     const saved = (await db.query('SELECT rows, synced_at FROM ga4_report_archive WHERE id = 1')).rows[0];
     if (!force && saved && Date.now() - new Date(saved.synced_at).getTime() < 6 * 3600000) return;
-    const previous: Daily[] = saved?.rows || [];
+    const previous: Daily[] = (saved?.rows || []).filter((r: Daily) => !r.source || r.source === 'ga4_report');
     const latest = previous.map(r => r.date).sort().pop();
     const startDate = latest ? new Date(Date.parse(latest) - 3 * 86400000).toISOString().slice(0, 10) : '2020-01-01';
     const client = new BetaAnalyticsDataClient({ credentials: credentials(), fallback: true });
     const incoming: Daily[] = [];
-    let rawFallback = false;
     try {
       for (let offset = 0; offset < 1000000; offset += 100000) {
         const [report] = await client.runReport({
@@ -102,32 +102,10 @@ export async function syncGaReports(pool: Pool, force = false) {
         }
         if (offset + 100000 >= Number(report.rowCount || 0)) break;
       }
-    } catch (error) {
-      // Native GA export provides an independent path when the reporting API is unavailable.
-      // Only dates after the verified historical import are eligible; never mix partial raw data into old reports.
-      const raw = await bq('queries', {
-        query: `SELECT PARSE_DATE('%Y%m%d', event_date) date, event_name event, COUNT(*) count,
-          COUNT(DISTINCT user_pseudo_id) users
-          FROM \`${project()}.analytics_${process.env.GA4_PROPERTY_ID}.events_*\`
-          WHERE _TABLE_SUFFIX >= @start AND REGEXP_CONTAINS(_TABLE_SUFFIX, r'^\\d{8}$')
-          GROUP BY date, event`, useLegacySql: false, location: 'US', timeoutMs: 10000, maximumBytesBilled: '100000000',
-        parameterMode: 'NAMED', queryParameters: [{ name: 'start', parameterType: { type: 'STRING' },
-          parameterValue: { value: startDate.replace(/-/g, '') > '20261114' ? startDate.replace(/-/g, '') : '20261114' } }],
-      }).catch(() => null);
-      if (!raw?.jobComplete || raw.pageToken || !raw.rows?.length) throw error;
-      incoming.length = 0;
-      for (const row of raw.rows) {
-        const [date, event, count, users] = row.f.map((f: any) => f.v);
-        incoming.push({ date, event, count: Number(count), users: Number(users), source: 'ga4_export' });
-      }
-      rawFallback = true;
     } finally { await client.close(); }
     // Empty reports must not erase previously imported history during transient API trouble.
     if (!incoming.length) throw new Error('GA report is empty; existing archive preserved');
-    const importedDates = new Set(incoming.map(r => r.date));
-    const rows = rawFallback
-      ? [...previous.filter(r => !importedDates.has(r.date)), ...incoming].sort((a, b) => a.date.localeCompare(b.date))
-      : mergeDaily(previous, incoming, startDate);
+    const rows = mergeDaily(previous, incoming, startDate);
     const now = new Date().toISOString();
     await loadGaDailyReport(rows, now);
     await db.query(`INSERT INTO ga4_report_archive(id, rows, synced_at) VALUES (1, $1, $2)
@@ -140,30 +118,31 @@ export async function syncGaReports(pool: Pool, force = false) {
   }
 }
 
-const cache = new Map<number, { at: number; value: any }>();
+const cache = new Map<string, { at: number; value: any }>();
 export async function bigQueryEventSummary(days: number) {
-  if (![0, 1, 7, 30, 90].includes(days)) throw new Error('Invalid report range');
-  const hit = cache.get(days);
+  if (![0, 1, 7, 28, 30, 90].includes(days)) throw new Error('Invalid report range');
+  const range = gaDateRange(days);
+  const cacheKey = `${range.startDate}:${range.endDate}`;
+  const hit = cache.get(cacheKey);
   if (hit && Date.now() - hit.at < 300000) return hit.value;
-  const query = `SELECT event, SUM(count) count, SUM(users) users, MIN(date) since, MAX(date) latest,
-    MAX(synced_at) synced_at, COUNTIF(source = 'ga4_export') raw_days FROM \`${project()}.${dataset}.${table}\`
-    WHERE (@days = 0 OR date >= DATE_SUB(CURRENT_DATE('Asia/Seoul'), INTERVAL @offset DAY))
+  const query = `SELECT event, SUM(count) count, MIN(date) since, MAX(date) latest,
+    MAX(synced_at) synced_at FROM \`${project()}.${dataset}.${table}\`
+    WHERE date BETWEEN @start AND @end AND (source = 'ga4_report' OR source IS NULL)
     GROUP BY event ORDER BY count DESC`;
   const report = await bq('queries', { query, useLegacySql: false, location: 'US', timeoutMs: 10000,
     maximumBytesBilled: '100000000', parameterMode: 'NAMED', queryParameters: [
-      { name: 'days', parameterType: { type: 'INT64' }, parameterValue: { value: String(days) } },
-      { name: 'offset', parameterType: { type: 'INT64' }, parameterValue: { value: String(Math.max(0, days - 1)) } },
+      { name: 'start', parameterType: { type: 'DATE' }, parameterValue: { value: range.startDate } },
+      { name: 'end', parameterType: { type: 'DATE' }, parameterValue: { value: range.endDate } },
     ] });
   if (!report.jobComplete || report.pageToken) throw new Error('BigQuery query incomplete');
   const rows = (report.rows || []).map((r: any) => r.f.map((f: any) => f.v));
-  const dates = rows.flatMap((r: any) => [r[3], r[4]]).sort();
-  const synced = rows[0]?.[5];
-  const value = { source: 'BigQuery · GA4 보고서 집계', days,
-    events: rows.map((r: any) => ({ event: r[0], count: Number(r[1]), users: Number(r[2]) })),
+  const dates = rows.flatMap((r: any) => [r[2], r[3]]).sort();
+  const synced = rows[0]?.[4];
+  const value = { source: 'GA4 보고서 저장본', days, range,
+    events: rows.map((r: any) => ({ event: r[0], count: Number(r[1]) })),
     coverage: { since: dates[0] || null, latest: dates[dates.length - 1] || null, syncedAt: synced ? new Date(Number(synced) * 1000).toISOString() : null },
-    userMetric: '일별 사용자 수 합계',
-    includesRawExport: rows.some((r: any) => Number(r[6]) > 0),
   };
-  cache.set(days, { at: Date.now(), value });
+  if (cache.size > 20) cache.clear();
+  cache.set(cacheKey, { at: Date.now(), value });
   return value;
 }

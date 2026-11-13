@@ -18,19 +18,6 @@ export const EXPLORER_SCHEMA = [
     ],
   },
   {
-    name: "analytics_events",
-    label: "사용자 행동",
-    columns: [
-      "event_name",
-      "session_id",
-      "shop_id",
-      "shop_type",
-      "platform",
-      "occurred_at",
-      "reservation_method",
-    ],
-  },
-  {
     name: "shop_view_events",
     label: "서버 상세 조회",
     columns: ["shop_id", "viewed_at"],

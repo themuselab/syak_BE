@@ -5,10 +5,11 @@ describe('read-only explorer boundary', () => {
   test.each([
     'SELECT id, name FROM shops WHERE is_partner = true LIMIT 100',
     'SELECT gu, count(*) AS total FROM shops GROUP BY gu ORDER BY total DESC LIMIT 100',
-    "SELECT shop_type, count(*) FROM analytics_events WHERE event_name = 'reserve_click' GROUP BY shop_type",
+    "SELECT shop_id, count(*) FROM favorites GROUP BY shop_id",
     "SELECT name FROM shops WHERE name = 'O''Brien'",
   ])('accepts supported query: %s', sql => expect(validateExplorerSql(sql)).toMatch(/SELECT/i));
   test.each([
+    'SELECT event_name FROM analytics_events',
     'DELETE FROM shops', 'SELECT name FROM shops; DROP TABLE shops',
     'SELECT * FROM users', 'SELECT detail FROM shops', 'SELECT * FROM shops',
     'SELECT pg_sleep(20) FROM shops', 'SELECT pg_catalog.pg_read_file(\'/etc/passwd\') FROM shops',

@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { Pool } from "pg";
 import { EXPLORER_SCHEMA, runExplorer } from "../infrastructure/QueryExplorer";
-import { internalFunnel } from "../infrastructure/FunnelService";
+import { gaFunnel } from "../infrastructure/GA4Funnel";
 import { bigQueryEventSummary } from "../infrastructure/BigQueryReports";
 
 export class InsightsController {
@@ -40,25 +40,25 @@ export class InsightsController {
         });
     }
   };
-  funnel = async (req: Request, res: Response, next: NextFunction) => {
+  funnel = async (req: Request, res: Response) => {
     const days = Number(req.query.days ?? 7),
-      platform = String(req.query.platform ?? "all");
+      shopType = String(req.query.shopType ?? "all");
     if (
-      ![1, 7, 30, 90].includes(days) ||
-      !["all", "web", "ios", "android", "toss"].includes(platform)
+      ![0, 1, 7, 28, 30, 90].includes(days) ||
+      !["all", "partner", "general"].includes(shopType)
     ) {
-      res.status(400).json({ message: "기간 또는 플랫폼을 확인해 주세요." });
+      res.status(400).json({ message: "기간 또는 샵 유형을 확인해 주세요." });
       return;
     }
     try {
-      res.json(await internalFunnel(this.pool, days, platform));
-    } catch (e) {
-      next(e);
+      res.json(await gaFunnel(this.pool, days, shopType));
+    } catch {
+      res.status(503).json({ message: "GA 퍼널 응답이 지연되고 있어요. 잠시 뒤 다시 조회해 주세요." });
     }
   };
   ga = async (req: Request, res: Response) => {
     const days = Number(req.query.days ?? 7);
-    if (![0, 1, 7, 30, 90].includes(days)) {
+    if (![0, 1, 7, 28, 30, 90].includes(days)) {
       res.status(400).json({ message: "기간을 확인해 주세요." });
       return;
     }
@@ -76,61 +76,6 @@ export class InsightsController {
       ga4Configured: !!(process.env.GA4_SA_KEY && process.env.GA4_PROPERTY_ID),
     });
   };
-  collect = async (req: Request, res: Response, next: NextFunction) => {
-    if (!this.limit(`collect:${req.ip}`, 300)) {
-      res.sendStatus(429);
-      return;
-    }
-    const input = req.body.events;
-    if (!Array.isArray(input) || input.length < 1 || input.length > 20) {
-      res.sendStatus(400);
-      return;
-    }
-    const accepted = [];
-    for (const e of input) {
-      if (
-        !e ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(e.event_id ?? "") ||
-        !/^[a-zA-Z0-9_-]{10,100}$/.test(e.session_id ?? "") ||
-        !/^[a-z][a-z0-9_]{0,59}$/.test(e.event_name ?? "") ||
-        !["web", "ios", "android", "toss"].includes(e.platform)
-      ) {
-        res.sendStatus(400);
-        return;
-      }
-      const ts = Number(e.ts);
-      if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > 86400000) {
-        res.sendStatus(400);
-        return;
-      }
-      accepted.push({
-        event_id: e.event_id,
-        session_id: e.session_id,
-        event_name: e.event_name,
-        platform: e.platform,
-        shop_id: /^\d{1,20}$/.test(e.shop_id ?? "") ? String(e.shop_id) : null,
-        shop_type: ["partner", "general"].includes(e.shop_type)
-          ? e.shop_type
-          : null,
-        reservation_method: ["naver", "phone", "kakao", "website"].includes(
-          e.reservation_method,
-        )
-          ? e.reservation_method
-          : null,
-        occurred_at: new Date(ts).toISOString(),
-      });
-    }
-    try {
-      await this.pool.query(
-        `INSERT INTO analytics_events (event_id,session_id,event_name,platform,shop_id,shop_type,reservation_method,occurred_at)
-        SELECT event_id::uuid,session_id,event_name,platform,shop_id,shop_type,reservation_method,occurred_at::timestamptz
-        FROM jsonb_to_recordset($1::jsonb) AS e(event_id text,session_id text,event_name text,platform text,shop_id text,shop_type text,reservation_method text,occurred_at text)
-        ON CONFLICT (event_id) DO NOTHING`,
-        [JSON.stringify(accepted)],
-      );
-      res.sendStatus(204);
-    } catch (e) {
-      next(e);
-    }
-  };
+  // Old cached clients may still send this request. Acknowledge without collecting.
+  collect = (_req: Request, res: Response) => { res.sendStatus(204); };
 }

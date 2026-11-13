@@ -14,7 +14,8 @@ export function adminRouter(admin: AdminController): Router {
   // ── 이하 관리자 인증 필요 ─────────────────────────────────────
   router.use(requireAdminAuth);
 
-  router.get('/insights/funnel', admin.insights.funnel);
+  router.get('/insights/funnel', (_req, res) => res.status(410).json({ message: 'GA 기준 대시보드로 변경되었습니다. 화면을 새로고침해 주세요.' }));
+  router.get('/insights/ga4-funnel', admin.insights.funnel);
   router.get('/insights/ga4', admin.insights.ga);
   router.get('/insights/integrations', admin.insights.integrations);
   router.get('/explorer/schema', admin.insights.schema);

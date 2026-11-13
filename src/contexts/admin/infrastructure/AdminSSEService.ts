@@ -1,7 +1,6 @@
 import { Response } from 'express';
 import { Pool } from 'pg';
 import { logger } from '../../../shared/logger';
-import { ga4EventCount } from './GA4Service';
 
 let _instance: AdminSSEService | null = null;
 export function getAdminSSE(): AdminSSEService | null { return _instance; }
@@ -14,7 +13,6 @@ export interface AdminSummary {
   users: number;
   owners: number;
   partnerShops: number;
-  views7d: number;
   openCodes: number;
   /** 검토 대기 중인 도입 문의 수 — 관리자 종 알림 표시용 */
   pendingInquiries: number;
@@ -64,17 +62,6 @@ export class AdminSSEService {
     catch (err) { logger.warn({ err }, 'admin SSE pushNow failed'); }
   }
 
-  // 7일 조회수는 GA4에서. SSE는 15초마다 도니 5분 캐시로 GA4 호출을 아낀다.
-  private views7dCache = { at: 0, value: 0 };
-  private async getViews7d(): Promise<number> {
-    if (Date.now() - this.views7dCache.at < 5 * 60_000) return this.views7dCache.value;
-    try {
-      const v = await ga4EventCount('shop_view', 7);
-      this.views7dCache = { at: Date.now(), value: v };
-    } catch { /* GA4 실패 시 직전 값 유지 */ }
-    return this.views7dCache.value;
-  }
-
   /** 대시보드 요약 계산 — SSE 폴링과 GET /admin/dashboard(fallback)가 공유 */
   async buildSummary(): Promise<AdminSummary> {
     const [
@@ -82,14 +69,12 @@ export class AdminSSEService {
       { rows: oRows },
       { rows: pRows },
       { rows: cRows },
-      views7d,
       { rows: iRows },
     ] = await Promise.all([
       this.rds.query(`SELECT COUNT(*) AS cnt FROM users`),
       this.rds.query(`SELECT COUNT(*) AS cnt FROM owner_accounts`),
       this.rds.query(`SELECT COUNT(*) AS cnt FROM shops WHERE is_partner = true`),
       this.rds.query(`SELECT COUNT(*) AS cnt FROM partner_codes WHERE used = FALSE AND expires_at > NOW()`),
-      this.getViews7d(), // GA4 shop_view 7일 (5분 캐시)
       // 종 알림용: 검토 대기 중인 도입 문의
       this.rds.query(`SELECT COUNT(*) AS cnt FROM shop_inquiries WHERE status = 'pending'`),
     ]);
@@ -98,7 +83,6 @@ export class AdminSSEService {
       users:        parseInt(uRows[0].cnt as string, 10),
       owners:       parseInt(oRows[0].cnt as string, 10),
       partnerShops: parseInt(pRows[0].cnt as string, 10),
-      views7d:      views7d,
       openCodes:    parseInt(cRows[0].cnt as string, 10),
       pendingInquiries: parseInt(iRows[0].cnt as string, 10),
       ts:           new Date().toISOString(),

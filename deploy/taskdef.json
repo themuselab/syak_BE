@@ -25,6 +25,8 @@
         { "name": "COOKIE_SAME_SITE", "value": "none" },
         { "name": "GEMINI_MODEL", "value": "gemini-2.5-flash" },
         { "name": "GA4_PROPERTY_ID", "value": "544178953" },
+        { "name": "BIGQUERY_PROJECT_ID", "value": "syak-c2ee0" },
+        { "name": "BIGQUERY_REPORTS_ENABLED", "value": "true" },
         { "name": "AWS_DEFAULT_REGION", "value": "ap-northeast-2" },
         { "name": "S3_MARKETING_BUCKET", "value": "syak-marketing-181250800061" }
       ],

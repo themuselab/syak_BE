@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { Pool } from "pg";
 import { EXPLORER_SCHEMA, runExplorer } from "../infrastructure/QueryExplorer";
 import { internalFunnel } from "../infrastructure/FunnelService";
-import { ga4EventSummary } from "../infrastructure/GA4Service";
+import { bigQueryEventSummary } from "../infrastructure/BigQueryReports";
 
 export class InsightsController {
   private buckets = new Map<string, { at: number; n: number }>();
@@ -58,16 +58,16 @@ export class InsightsController {
   };
   ga = async (req: Request, res: Response) => {
     const days = Number(req.query.days ?? 7);
-    if (![1, 7, 30, 90].includes(days)) {
+    if (![0, 1, 7, 30, 90].includes(days)) {
       res.status(400).json({ message: "기간을 확인해 주세요." });
       return;
     }
     try {
-      res.json({ events: await ga4EventSummary(days), source: "GA4", days });
+      res.json(await bigQueryEventSummary(days));
     } catch {
       res
         .status(503)
-        .json({ message: "GA4 연결 또는 조회 권한을 확인해 주세요." });
+        .json({ message: "BigQuery 집계를 준비 중이거나 조회에 실패했어요. 잠시 뒤 다시 확인해 주세요." });
     }
   };
   integrations = (_req: Request, res: Response) => {

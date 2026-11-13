@@ -11,6 +11,7 @@ import { logger } from './shared/logger';
 import { closePool, getRdsPool } from './shared/lib/database';
 import { SLOT_ALERTS_MIGRATION_SQL } from './contexts/notification/infrastructure/slotAlertsMigration';
 import { TRACKING_MIGRATION_SQL } from './shared/lib/trackingMigration';
+import { syncGaReports } from './contexts/admin/infrastructure/BigQueryReports';
 
 // CSRF 미제거 이유: 이 API는 네이티브 모바일 앱 전용.
 // 브라우저는 제3자 사이트의 요청에 쿠키를 자동 첨부하여 CSRF가 위험하지만,
@@ -95,6 +96,14 @@ if (require.main === module) {
   const server = app.listen(port, () => {
     logger.info(`Syak backend running on port ${port} [${process.env.NODE_ENV ?? 'development'}]`);
   });
+
+  if (process.env.GA4_SA_KEY && process.env.BIGQUERY_REPORTS_ENABLED === 'true') {
+    const sync = () => syncGaReports(getRdsPool())
+      .then(result => { if (result) logger.info(result, 'GA4 BigQuery reports synced'); })
+      .catch(() => logger.warn('GA4 BigQuery sync failed; previous report preserved'));
+    setTimeout(() => { void sync(); }, 30000).unref();
+    setInterval(() => { void sync(); }, 6 * 3600000).unref();
+  }
 
   const shutdown = async () => {
     logger.info('Shutting down...');

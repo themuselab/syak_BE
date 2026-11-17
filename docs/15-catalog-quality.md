@@ -19,3 +19,7 @@
   이름이 애매한 정상 매장은 추측으로 제외하지 않는다.
 
 검증: 백엔드 빌드·Jest, 수집기 `python -m unittest test_place_photos.py test_partner_refresh.py`.
+
+추가 발견: 신규 파트너의 detail JSON은 전체 요약 스냅샷이 아니라 부분 보강 데이터다.
+웹 상세 API에서 canonical shops 컬럼의 매장명·업종·좌표·리뷰 수를 합치고 필수 배열을
+기본화한다. 테라리온 등 신규 파트너의 reviewTotal 누락으로 발생하는 빈 화면을 방지한다.

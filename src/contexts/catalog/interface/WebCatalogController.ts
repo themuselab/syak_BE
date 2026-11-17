@@ -10,6 +10,24 @@ function cleanRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
   }));
 }
 
+// New partner rows may contain only enriched fields in detail, rather than a
+// complete old read-model snapshot. Build required fields from canonical columns.
+function completeDetail(row: Record<string, unknown>): Record<string, unknown> {
+  const raw = (row.detail && typeof row.detail === 'object' ? row.detail : {}) as Record<string, unknown>;
+  const images = (raw.images ?? {}) as Record<string, unknown>;
+  return { ...row, detail: {
+    roadAddress: null, instagram: null, phone: null, menus: [], reviews: [], reservationRoutes: [],
+    ...raw,
+    id: row.id, name: row.name, category: row.category, categories: row.categories ?? [], gu: row.gu,
+    coord: { lat: row.lat, lng: row.lng },
+    representativeImage: row.representative_image ?? null,
+    reviewCount: Number(row.review_count ?? 0), reviewTotal: Number(raw.reviewTotal ?? row.review_count ?? 0),
+    priceTier: row.price_tier ?? '미정', minPrice: row.min_price ?? null,
+    firstVisitDeal: !!row.first_visit_deal, reservable: !!row.reservable,
+    images: { representative: row.representative_image ?? null, gallery: [], menu: [], review: [], ...images },
+  } };
+}
+
 /**
  * 소비자 웹 전용 raw 카탈로그 API (RDS). 웹이 Supabase REST를 직접 호출하던 것을
  * 백엔드 경유로 바꾸기 위해, 웹이 기대하는 raw 컬럼 형태를 그대로 반환한다.
@@ -94,9 +112,9 @@ export class WebCatalogController {
   detail = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { rows } = await this.rds.query(
-        `SELECT ${DETAIL_COLS} FROM shops WHERE ${PUBLIC_SHOP_SQL} AND id = $1`, [req.params.shopId],
+        `SELECT ${SUMMARY_COLS}, ${DETAIL_COLS} FROM shops WHERE ${PUBLIC_SHOP_SQL} AND id = $1`, [req.params.shopId],
       );
-      res.json(cleanRows(rows)); // 웹은 배열에서 [0]을 취함
+      res.json(cleanRows(rows.map(completeDetail))); // 웹은 배열에서 [0]을 취함
     } catch (err) { next(err); }
   };
 

@@ -49,3 +49,18 @@ it('cleans old web detail gallery and representative images', async () => {
     gallery: ['https://ldb-phinf.pstatic.net/shop.jpg'], representative: 'https://ldb-phinf.pstatic.net/shop.jpg',
   });
 });
+
+it('serves a complete detail for newly registered partners without an old snapshot', async () => {
+  const query = jest.fn().mockResolvedValue({ rows: [{ id: 'new-partner', name: '테라리온',
+    category: '마사지', categories: ['마사지'], gu: '수원시', lat: 37, lng: 127,
+    review_count: 178, detail: { roadAddress: '수원시 매장 주소', images: { gallery: [] } },
+  }] });
+  const res = { json: jest.fn() } as unknown as Response;
+  await new WebCatalogController({ query } as unknown as Pool).detail(
+    { params: { shopId: 'new-partner' } } as unknown as Request, res, jest.fn());
+  expect((res.json as jest.Mock).mock.calls[0][0][0].detail).toMatchObject({
+    id: 'new-partner', name: '테라리온', category: '마사지', reviewTotal: 178,
+    roadAddress: '수원시 매장 주소', menus: [], reviews: [], reservationRoutes: [],
+    images: { gallery: [], menu: [], review: [] },
+  });
+});

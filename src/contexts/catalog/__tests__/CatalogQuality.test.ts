@@ -8,6 +8,7 @@ import { isExcludedShop, PUBLIC_SHOP_SQL } from '../../../shared/catalog-exclusi
 
 it('keeps unrelated legitimate shops and excludes the reviewed plumbing listing', async () => {
   expect(isExcludedShop('1561251960')).toBe(true);
+  expect(isExcludedShop('1225759020')).toBe(true);
   expect(isExcludedShop('1327515760')).toBe(false);
   const query = jest.fn();
   const cache = { get: jest.fn() } as unknown as ICacheService;

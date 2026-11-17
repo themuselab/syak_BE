@@ -4,11 +4,16 @@ import { WebCatalogController } from '../interface/WebCatalogController';
 import { PgShopRepository } from '../infrastructure/PgShopRepository';
 import { PgSlotRepository } from '../../reservation/infrastructure/PgSlotRepository';
 import { ICacheService } from '../../../shared/cache/ICacheService';
-import { isExcludedShop, PUBLIC_SHOP_SQL } from '../../../shared/catalog-exclusions';
+import { isExcludedShop, PUBLIC_SHOP_SQL, EXCLUDED_SHOP_IDS } from '../../../shared/catalog-exclusions';
 
 it('keeps unrelated legitimate shops and excludes the reviewed plumbing listing', async () => {
   expect(isExcludedShop('1561251960')).toBe(true);
   expect(isExcludedShop('1225759020')).toBe(true);
+  expect(isExcludedShop('1001548336')).toBe(true);
+  expect(EXCLUDED_SHOP_IDS).toHaveLength(49);
+  expect(new Set(EXCLUDED_SHOP_IDS).size).toBe(49);
+  expect(isExcludedShop('future-import-id', '반영구시트옥상방수누수공사')).toBe(true);
+  expect(isExcludedShop('real-shop', '반영구 뷰티샵')).toBe(false);
   expect(isExcludedShop('1327515760')).toBe(false);
   const query = jest.fn();
   const cache = { get: jest.fn() } as unknown as ICacheService;

@@ -19,7 +19,7 @@ const LIST_GALLERY_LIMIT = 3;
 const FULL_COLS = `${SUMMARY_COLS}, biz_id, biz_type, detail`;
 
 function filterCacheKey(filter: ShopFilter): string {
-  return `shops:list:quality-v2:${JSON.stringify(filter, Object.keys(filter).sort())}`;
+  return `shops:list:quality-v3:${JSON.stringify(filter, Object.keys(filter).sort())}`;
 }
 
 /** RDS(pg) 기반 샵 리포지토리 — Supabase에서 이전. jsonb는 node-pg가 JS로 파싱. */
@@ -153,10 +153,11 @@ export class PgShopRepository implements IShopRepository {
     if (isExcludedShop(id)) return null;
     const cacheKey = `shops:detail:${id}`;
     const cached = await this.cache.get<Shop>(cacheKey);
-    if (cached) return { ...cached, photos: realPhotos(cached.photos) };
+    if (cached) return isExcludedShop(cached.id, cached.name) ? null : { ...cached, photos: realPhotos(cached.photos) };
 
     const { rows } = await this.rds.query(`SELECT ${FULL_COLS} FROM shops WHERE id = $1`, [id]);
     if (!rows[0]) return null;
+    if (isExcludedShop(id, rows[0].name as string)) return null;
 
     const shop = this.mapFull(rows[0] as Record<string, unknown>);
     await this.cache.set(cacheKey, shop, DETAIL_TTL);

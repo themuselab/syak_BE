@@ -47,7 +47,7 @@ export class PgSlotRepository implements ISlotRepository {
     const districts = query.districts?.length ? [...query.districts].sort() : null;
     const key = `slots:search:${[...query.dates].sort().join(',')}|${[...times].sort().join(',')}|${districts?.join(',') ?? ''}`;
     const cached = await this.cache.get<ShopWithSlots[]>(key);
-    if (cached) return cached.filter(shop => !isExcludedShop(shop.shopId));
+    if (cached) return cached.filter(shop => !isExcludedShop(shop.shopId, shop.shopName));
 
     // 1) RDS에서 날짜+시간 매칭 슬롯 (전 샵). start_time은 TIME 비교로 인덱스 활용
     const dbTimes = times.map(t => `${t}:00`); // 'HH:MM' → 'HH:MM:00'
@@ -91,7 +91,7 @@ export class PgSlotRepository implements ISlotRepository {
     }
     const map = new Map<string, { name: string; gu: string | null }>();
     for (const s of all) {
-      if (isExcludedShop(s.id)) continue;
+      if (isExcludedShop(s.id, s.name)) continue;
       if (districts && !districts.includes(s.gu ?? '')) continue;
       map.set(s.id, { name: s.name, gu: s.gu });
     }

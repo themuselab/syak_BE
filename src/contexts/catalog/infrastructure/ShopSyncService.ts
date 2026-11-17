@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { PUBLIC_SHOP_SQL } from '../../../shared/catalog-exclusions';
 
 /**
  * 스크래퍼용 내부 샵 오퍼레이션 (RDS). Supabase 이전에 따라 스크래퍼가
@@ -11,7 +12,7 @@ export class ShopSyncService {
   async getTargets(): Promise<Record<string, unknown>[]> {
     const { rows } = await this.rds.query(
       `SELECT id, biz_id, item_id, biz_type, item_ids, items
-       FROM shops WHERE biz_id IS NOT NULL
+       FROM shops WHERE ${PUBLIC_SHOP_SQL} AND biz_id IS NOT NULL
        AND NOT (is_partner IS TRUE AND detail->'_partnerRefresh'->>'slots' IS NOT NULL) ORDER BY id`,
     );
     return rows;
@@ -25,7 +26,7 @@ export class ShopSyncService {
     const { rows } = await this.rds.query(
       `SELECT s.id, s.biz_id, s.item_id, s.biz_type, s.item_ids, s.items
          FROM shops s
-        WHERE s.biz_id IS NOT NULL
+        WHERE s.${PUBLIC_SHOP_SQL} AND s.biz_id IS NOT NULL
           AND NOT (s.is_partner IS TRUE AND s.detail->'_partnerRefresh'->>'slots' IS NOT NULL)
           AND EXISTS (SELECT 1 FROM favorites f WHERE f.shop_id = s.id)
         ORDER BY s.id`,
@@ -48,7 +49,7 @@ export class ShopSyncService {
                 ROW_NUMBER() OVER (PARTITION BY category, gu
                                    ORDER BY review_count DESC NULLS LAST) AS rn
          FROM shops
-         WHERE category = ANY($1::text[]) AND gu IS NOT NULL AND name IS NOT NULL
+         WHERE ${PUBLIC_SHOP_SQL} AND category = ANY($1::text[]) AND gu IS NOT NULL AND name IS NOT NULL
        )
        SELECT id, category, gu, name, min_price, price_tier, has_event, first_visit_deal,
               today_open, review_count, road, menus, photo

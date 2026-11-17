@@ -3,6 +3,8 @@ import { IShopRepository, ShopListResult } from '../ports/IShopRepository';
 import { Shop, ShopSummary, ShopMenu, ShopReview, Category, PriceTier, ReservationRoute, BusinessHourDay } from '../domain/Shop';
 import { ShopFilter, SortOrder } from '../domain/ShopFilter';
 import { ICacheService } from '../../../shared/cache/ICacheService';
+import { shopPhotos as realPhotos } from '../domain/ShopPhotos';
+import { PUBLIC_SHOP_SQL, isExcludedShop } from '../../../shared/catalog-exclusions';
 
 const LIST_TTL   = 300;
 const DETAIL_TTL = 600;
@@ -17,16 +19,10 @@ const LIST_GALLERY_LIMIT = 3;
 const FULL_COLS = `${SUMMARY_COLS}, biz_id, biz_type, detail`;
 
 function filterCacheKey(filter: ShopFilter): string {
-  return `shops:list:${JSON.stringify(filter, Object.keys(filter).sort())}`;
+  return `shops:list:quality-v2:${JSON.stringify(filter, Object.keys(filter).sort())}`;
 }
 
 /** RDS(pg) 기반 샵 리포지토리 — Supabase에서 이전. jsonb는 node-pg가 JS로 파싱. */
-// 네이버 지도 프로모션 배너(maps-cms: "네이버 예약하세요"·"간편청구" 등)는 매장 사진이 아니다.
-// 갤러리 수집 때 같이 딸려 들어와 모든 샵 사진 앞 두 장이 같은 배너로 보였다 → 응답에서 뺀다.
-const PROMO_IMG = /maps-cms|\/maps-service\.pstatic\.net\//;
-function realPhotos(v: unknown): string[] {
-  return (Array.isArray(v) ? v : []).filter((u): u is string => typeof u === 'string' && !!u && !PROMO_IMG.test(u));
-}
 
 export class PgShopRepository implements IShopRepository {
   constructor(
@@ -40,7 +36,7 @@ export class PgShopRepository implements IShopRepository {
     }
     const cacheKey = filterCacheKey(filter);
     const cached = await this.cache.get<ShopListResult>(cacheKey);
-    if (cached) return cached;
+    if (cached) return { ...cached, items: cached.items.map(shop => ({ ...shop, photos: realPhotos(shop.photos) })) };
 
     // 슬롯 사전 조회 (RDS slots — scraper/owner 통합)
     let slotShopIds: string[] | null = null;
@@ -67,7 +63,7 @@ export class PgShopRepository implements IShopRepository {
     const limit  = filter.limit ?? 20;
     const offset = ((filter.page ?? 1) - 1) * limit;
 
-    const cond: string[] = [];
+    const cond: string[] = [PUBLIC_SHOP_SQL];
     const params: unknown[] = [];
     const add = (v: unknown) => { params.push(v); return `$${params.length}`; };
 
@@ -154,9 +150,10 @@ export class PgShopRepository implements IShopRepository {
   }
 
   async findById(id: string): Promise<Shop | null> {
+    if (isExcludedShop(id)) return null;
     const cacheKey = `shops:detail:${id}`;
     const cached = await this.cache.get<Shop>(cacheKey);
-    if (cached) return cached;
+    if (cached) return { ...cached, photos: realPhotos(cached.photos) };
 
     const { rows } = await this.rds.query(`SELECT ${FULL_COLS} FROM shops WHERE id = $1`, [id]);
     if (!rows[0]) return null;

@@ -1,5 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
+import { cleanShopImages, isShopPhoto } from '../domain/ShopPhotos';
+import { PUBLIC_SHOP_SQL, isExcludedShop } from '../../../shared/catalog-exclusions';
+
+function cleanRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return rows.map(row => ({ ...row,
+    ...('representative_image' in row && !isShopPhoto(row.representative_image) ? { representative_image: null } : {}),
+    ...(row.detail && typeof row.detail === 'object' ? { detail: cleanShopImages(row.detail as Record<string, unknown>) } : {}),
+  }));
+}
 
 /**
  * 소비자 웹 전용 raw 카탈로그 API (RDS). 웹이 Supabase REST를 직접 호출하던 것을
@@ -23,11 +32,11 @@ export class WebCatalogController {
       const limit = Math.min(num(req.query.limit, 600), 2000);
       const { rows } = await this.rds.query(
         `SELECT ${SUMMARY_COLS} FROM shops
-         WHERE lat BETWEEN $1 AND $2 AND lng BETWEEN $3 AND $4
+         WHERE ${PUBLIC_SHOP_SQL} AND lat BETWEEN $1 AND $2 AND lng BETWEEN $3 AND $4
          ORDER BY review_count DESC NULLS LAST LIMIT $5`,
         [num(swLat, -90), num(neLat, 90), num(swLng, -180), num(neLng, 180), limit],
       );
-      res.json(rows);
+      res.json(cleanRows(rows));
     } catch (err) { next(err); }
   };
 
@@ -37,11 +46,11 @@ export class WebCatalogController {
       const limit = Math.min(num(req.query.limit, 5000), 8000);
       const { rows } = await this.rds.query(
         `SELECT ${PIN_COLS} FROM shops
-         WHERE lat BETWEEN $1 AND $2 AND lng BETWEEN $3 AND $4
+         WHERE ${PUBLIC_SHOP_SQL} AND lat BETWEEN $1 AND $2 AND lng BETWEEN $3 AND $4
          ORDER BY review_count DESC NULLS LAST LIMIT $5`,
         [num(swLat, -90), num(neLat, 90), num(swLng, -180), num(neLng, 180), limit],
       );
-      res.json(rows);
+      res.json(cleanRows(rows));
     } catch (err) { next(err); }
   };
 
@@ -51,11 +60,11 @@ export class WebCatalogController {
       const limit = Math.min(num(req.query.limit, 600), 2000);
       if (!gus.length) { res.json([]); return; }
       const { rows } = await this.rds.query(
-        `SELECT ${SUMMARY_COLS} FROM shops WHERE gu = ANY($1::text[])
+        `SELECT ${SUMMARY_COLS} FROM shops WHERE ${PUBLIC_SHOP_SQL} AND gu = ANY($1::text[])
          ORDER BY review_count DESC NULLS LAST LIMIT $2`,
         [gus, limit],
       );
-      res.json(rows);
+      res.json(cleanRows(rows));
     } catch (err) { next(err); }
   };
 
@@ -63,10 +72,10 @@ export class WebCatalogController {
     try {
       const limit = Math.min(num(req.query.limit, 200), 1000);
       const { rows } = await this.rds.query(
-        `SELECT ${SUMMARY_COLS} FROM shops WHERE is_partner = true
+        `SELECT ${SUMMARY_COLS} FROM shops WHERE ${PUBLIC_SHOP_SQL} AND is_partner = true
          ORDER BY review_count DESC NULLS LAST LIMIT $1`, [limit],
       );
-      res.json(rows);
+      res.json(cleanRows(rows));
     } catch (err) { next(err); }
   };
 
@@ -75,19 +84,19 @@ export class WebCatalogController {
       const q = String(req.query.q ?? '').trim();
       if (!q) { res.json([]); return; }
       const { rows } = await this.rds.query(
-        `SELECT ${SUMMARY_COLS} FROM shops WHERE name ILIKE $1
+        `SELECT ${SUMMARY_COLS} FROM shops WHERE ${PUBLIC_SHOP_SQL} AND name ILIKE $1
          ORDER BY review_count DESC NULLS LAST LIMIT 30`, [`%${q}%`],
       );
-      res.json(rows);
+      res.json(cleanRows(rows));
     } catch (err) { next(err); }
   };
 
   detail = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { rows } = await this.rds.query(
-        `SELECT ${DETAIL_COLS} FROM shops WHERE id = $1`, [req.params.shopId],
+        `SELECT ${DETAIL_COLS} FROM shops WHERE ${PUBLIC_SHOP_SQL} AND id = $1`, [req.params.shopId],
       );
-      res.json(rows); // 웹은 배열에서 [0]을 취함
+      res.json(cleanRows(rows)); // 웹은 배열에서 [0]을 취함
     } catch (err) { next(err); }
   };
 
@@ -96,7 +105,7 @@ export class WebCatalogController {
     try {
       const shopId = String(req.query.shopId ?? '');
       const date = String(req.query.date ?? '');
-      if (!shopId || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { res.json([]); return; }
+      if (!shopId || isExcludedShop(shopId) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { res.json([]); return; }
       const { rows } = await this.rds.query(
         `SELECT to_char(start_time,'HH24:MI:SS') AS start_time FROM slots
          WHERE shop_id = $1 AND date = $2::date AND source IN ('scraper','owner')
@@ -138,7 +147,7 @@ export class WebCatalogController {
            AND source IN ('scraper','owner') AND (status IS NULL OR status NOT IN ('reserved','expired'))`,
         [date, hour, to],
       );
-      res.json(rows);
+      res.json(rows.filter(row => !isExcludedShop(String(row.shop_id))));
     } catch (err) { next(err); }
   };
 }

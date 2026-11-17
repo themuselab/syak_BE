@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { ISlotRepository } from '../ports/ISlotRepository';
 import { Slot, SlotSearchQuery, ShopWithSlots } from '../domain/Slot';
 import { ICacheService } from '../../../shared/cache/ICacheService';
+import { isExcludedShop } from '../../../shared/catalog-exclusions';
 
 /**
  * 슬롯은 RDS의 slots 테이블에서 읽는다 (Supabase egress 회피).
@@ -19,6 +20,7 @@ export class PgSlotRepository implements ISlotRepository {
   ) {}
 
   async findByShop(shopId: string, dates: string[]): Promise<Slot[]> {
+    if (isExcludedShop(shopId)) return [];
     if (!dates.length) return [];
     const key = `slots:shop:${shopId}:${[...dates].sort().join(',')}`;
     const cached = await this.cache.get<Slot[]>(key);
@@ -45,7 +47,7 @@ export class PgSlotRepository implements ISlotRepository {
     const districts = query.districts?.length ? [...query.districts].sort() : null;
     const key = `slots:search:${[...query.dates].sort().join(',')}|${[...times].sort().join(',')}|${districts?.join(',') ?? ''}`;
     const cached = await this.cache.get<ShopWithSlots[]>(key);
-    if (cached) return cached;
+    if (cached) return cached.filter(shop => !isExcludedShop(shop.shopId));
 
     // 1) RDS에서 날짜+시간 매칭 슬롯 (전 샵). start_time은 TIME 비교로 인덱스 활용
     const dbTimes = times.map(t => `${t}:00`); // 'HH:MM' → 'HH:MM:00'
@@ -89,6 +91,7 @@ export class PgSlotRepository implements ISlotRepository {
     }
     const map = new Map<string, { name: string; gu: string | null }>();
     for (const s of all) {
+      if (isExcludedShop(s.id)) continue;
       if (districts && !districts.includes(s.gu ?? '')) continue;
       map.set(s.id, { name: s.name, gu: s.gu });
     }
@@ -104,7 +107,7 @@ export class PgSlotRepository implements ISlotRepository {
          AND source IN ('scraper','owner') AND (${AVAILABLE})`,
       [date, at],
     );
-    return rows.map(r => r.shop_id as string);
+    return rows.map(r => r.shop_id as string).filter(id => !isExcludedShop(id));
   }
 
   /**

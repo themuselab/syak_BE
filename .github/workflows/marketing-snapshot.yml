@@ -1,8 +1,10 @@
 name: marketing-snapshot
 
 on:
-  schedule:
-    - cron: "20 23 * * *" # 매일 08:20 KST (app 리포트 이후)
+  # Scheduled collection paused 2026-11-20: this legacy script still writes to
+  # the retired Supabase project (ENOTFOUND); the Meta Ads token is expired too.
+  # Restore the schedule only after migrating snapshots/token persistence to RDS
+  # and verifying renewed provider credentials. Manual runs remain diagnostic.
   workflow_dispatch: {} # 수동 실행
 
 concurrency:

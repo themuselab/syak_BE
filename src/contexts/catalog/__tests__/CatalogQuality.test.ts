@@ -10,8 +10,14 @@ it('keeps unrelated legitimate shops and excludes the reviewed plumbing listing'
   expect(isExcludedShop('1561251960')).toBe(true);
   expect(isExcludedShop('1225759020')).toBe(true);
   expect(isExcludedShop('1001548336')).toBe(true);
-  expect(EXCLUDED_SHOP_IDS).toHaveLength(49);
-  expect(new Set(EXCLUDED_SHOP_IDS).size).toBe(49);
+  expect(EXCLUDED_SHOP_IDS).toHaveLength(365);
+  expect(new Set(EXCLUDED_SHOP_IDS).size).toBe(365);
+  expect(isExcludedShop('37445846')).toBe(true);
+  expect(isExcludedShop('1068874238')).toBe(true);
+  expect(isExcludedShop('new-id', '코웨이정수기.룰루비데.공기청정기.비렉스마사지셋.매트리스.렌탈')).toBe(true);
+  expect(isExcludedShop('31572101', '헬스케어')).toBe(true);
+  expect(isExcludedShop('1685687060', '두손헬스케어 안마원')).toBe(false);
+  expect(isExcludedShop('1906094879', '수 중국상사')).toBe(false);
   expect(isExcludedShop('future-import-id', '반영구시트옥상방수누수공사')).toBe(true);
   expect(isExcludedShop('real-shop', '반영구 뷰티샵')).toBe(false);
   expect(isExcludedShop('1327515760')).toBe(false);

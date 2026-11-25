@@ -3,7 +3,10 @@
  * plus 2 plumbing/leak-repair listings mislabeled massage. 49 source IDs
  * reviewed together; do not infer exclusion from ambiguous beauty-shop names.
  */
+import { REMOVED_SHOP_IDS } from './catalog-removals';
+
 export const EXCLUDED_SHOP_IDS = [
+  ...REMOVED_SHOP_IDS,
   '1001548336', '1019367765', '1024440462', '1028904859', '1046432055',
   '1091728572', '1099006142', '1154994939', '1168736335', '1169488868',
   '1197307613', '1225759020', '1229791418', '1232065263', '1256174774',
@@ -16,6 +19,8 @@ export const EXCLUDED_SHOP_IDS = [
   '1934592802', '1959140967', '1967903757', '1995598528',
 ] as const;
 const NON_BEAUTY_NAMES = [
+  '미래바이텍', '메디니스', '노트북수리', '출장빵구수리',
+  '코웨이정수기.룰루비데.공기청정기.비렉스마사지셋.매트리스.렌탈',
   '반영구시트옥상방수누수공사',
   '누수탐지업체수도배관누수보일러배관하수구막힘싱크대수전교체',
   '누수탐지,아파트누수,보험처리,도배,곰팡이,석고보드교체',

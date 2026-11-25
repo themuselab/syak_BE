@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { PUBLIC_SHOP_SQL } from '../../../shared/catalog-exclusions';
+import { PUBLIC_SHOP_SQL, isExcludedShop } from '../../../shared/catalog-exclusions';
 
 /**
  * 스크래퍼용 내부 샵 오퍼레이션 (RDS). Supabase 이전에 따라 스크래퍼가
@@ -210,6 +210,7 @@ export class ShopSyncService {
 
   /** 파트너 상세 enrich upsert (Playwright가 수집한 필드) */
   async enrichShop(r: Record<string, unknown>): Promise<void> {
+    if (isExcludedShop(String(r.id), typeof r.name === 'string' ? r.name : undefined)) return;
     const gu = (r.gu as string) ?? (Array.isArray(r.gus) ? (r.gus as string[])[0] : null);
     const category = (r.category as string) ?? (Array.isArray(r.categories) ? (r.categories as string[])[0] : null);
     const categories = Array.isArray(r.categories) ? r.categories : (category ? [category] : []);

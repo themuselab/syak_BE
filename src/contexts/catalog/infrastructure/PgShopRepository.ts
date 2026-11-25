@@ -36,7 +36,9 @@ export class PgShopRepository implements IShopRepository {
     }
     const cacheKey = filterCacheKey(filter);
     const cached = await this.cache.get<ShopListResult>(cacheKey);
-    if (cached) return { ...cached, items: cached.items.map(shop => ({ ...shop, photos: realPhotos(shop.photos) })) };
+    if (cached && !cached.items.some(shop => isExcludedShop(shop.id, shop.name))) {
+      return { ...cached, items: cached.items.map(shop => ({ ...shop, photos: realPhotos(shop.photos) })) };
+    }
 
     // 슬롯 사전 조회 (RDS slots — scraper/owner 통합)
     let slotShopIds: string[] | null = null;

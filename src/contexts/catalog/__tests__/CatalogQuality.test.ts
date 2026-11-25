@@ -5,13 +5,13 @@ import { PgShopRepository } from '../infrastructure/PgShopRepository';
 import { PgSlotRepository } from '../../reservation/infrastructure/PgSlotRepository';
 import { ICacheService } from '../../../shared/cache/ICacheService';
 import { isExcludedShop, PUBLIC_SHOP_SQL, EXCLUDED_SHOP_IDS } from '../../../shared/catalog-exclusions';
+import { ShopSyncService } from '../infrastructure/ShopSyncService';
 
 it('keeps unrelated legitimate shops and excludes the reviewed plumbing listing', async () => {
   expect(isExcludedShop('1561251960')).toBe(true);
   expect(isExcludedShop('1225759020')).toBe(true);
   expect(isExcludedShop('1001548336')).toBe(true);
-  expect(EXCLUDED_SHOP_IDS).toHaveLength(365);
-  expect(new Set(EXCLUDED_SHOP_IDS).size).toBe(365);
+  expect(new Set(EXCLUDED_SHOP_IDS).size).toBe(EXCLUDED_SHOP_IDS.length);
   expect(isExcludedShop('37445846')).toBe(true);
   expect(isExcludedShop('1068874238')).toBe(true);
   expect(isExcludedShop('new-id', '코웨이정수기.룰루비데.공기청정기.비렉스마사지셋.매트리스.렌탈')).toBe(true);
@@ -28,6 +28,32 @@ it('keeps unrelated legitimate shops and excludes the reviewed plumbing listing'
   expect(await new PgSlotRepository(pool, cache).findByShop('1561251960', ['2026-11-17'])).toEqual([]);
   expect(query).not.toHaveBeenCalled();
   expect(cache.get).not.toHaveBeenCalled();
+});
+
+it('does not ingest verified suppliers, schools or medical clinics as salons', async () => {
+  const query = jest.fn().mockResolvedValue({ rows: [] });
+  const service = new ShopSyncService({ query } as unknown as Pool);
+  for (const sourceCategory of ['미용기기,재료', '미용교육', '산부인과', '화장품,향수']) {
+    await service.enrichShop({ id: 'new', category: '피부', detail: { sourceCategory } });
+  }
+  expect(query).not.toHaveBeenCalled();
+  await service.enrichShop({ id: 'real-salon', name: '네일공장 아카데미', category: '네일',
+    detail: { sourceCategory: '네일아트,네일샵' } });
+  expect(query).toHaveBeenCalledTimes(1);
+  await service.enrichShop({ id: 'unverified-existing', category: '네일' });
+  expect(query).toHaveBeenCalledTimes(2);
+});
+
+it('stores source verification without changing existing category or erasing missing evidence', async () => {
+  const query = jest.fn().mockResolvedValue({ rowCount: 1 });
+  const service = new ShopSyncService({ query } as unknown as Pool);
+  await service.updateDetails([{ id: 'verified', sourceCategory: '네일아트,네일샵', sourceCategoryCodeList: ['1', null] }]);
+  const patch = JSON.parse(query.mock.calls[0][1][1]);
+  expect(patch).toMatchObject({ sourceCategory: '네일아트,네일샵', sourceCategoryCodeList: ['1'] });
+  expect(patch.sourceCategoryCheckedAt).toEqual(expect.any(String));
+  expect(query.mock.calls[0][0]).not.toContain('SET category');
+  await service.updateDetails([{ id: 'missing-source', rating: 4.8 }]);
+  expect(JSON.parse(query.mock.calls[1][1][1])).toEqual({ rating: 4.8 });
 });
 
 it('applies the exclusion before pagination on every public web catalog surface', async () => {

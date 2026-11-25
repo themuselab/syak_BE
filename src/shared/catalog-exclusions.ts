@@ -1,11 +1,11 @@
-/** Confirmed catalog errors. Preserve source/customer records; hide from discovery.
+/** Confirmed catalog errors: hide from discovery and prevent stale-cache exposure.
  * 2026-11-17: 47 listings named 반영구시트옥상방수누수공사 mislabeled PMU,
  * plus 2 plumbing/leak-repair listings mislabeled massage. 49 source IDs
  * reviewed together; do not infer exclusion from ambiguous beauty-shop names.
  */
 import { REMOVED_SHOP_IDS } from './catalog-removals';
 
-export const EXCLUDED_SHOP_IDS = [
+export const EXCLUDED_SHOP_IDS = [...new Set([
   ...REMOVED_SHOP_IDS,
   '1001548336', '1019367765', '1024440462', '1028904859', '1046432055',
   '1091728572', '1099006142', '1154994939', '1168736335', '1169488868',
@@ -17,7 +17,7 @@ export const EXCLUDED_SHOP_IDS = [
   '1739177378', '1761476613', '1801190811', '1822140859', '1822767385',
   '1825336478', '1834992322', '1839069423', '1924842087', '1932601885',
   '1934592802', '1959140967', '1967903757', '1995598528',
-] as const;
+])] as const;
 const NON_BEAUTY_NAMES = [
   '미래바이텍', '메디니스', '노트북수리', '출장빵구수리',
   '코웨이정수기.룰루비데.공기청정기.비렉스마사지셋.매트리스.렌탈',

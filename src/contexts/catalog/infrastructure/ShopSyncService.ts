@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { PUBLIC_SHOP_SQL, isExcludedShop } from '../../../shared/catalog-exclusions';
+import { isNonSalonSourceCategory } from '../../../shared/catalog-source-category';
 
 /**
  * 스크래퍼용 내부 샵 오퍼레이션 (RDS). Supabase 이전에 따라 스크래퍼가
@@ -179,10 +180,17 @@ export class ShopSyncService {
 
   /** 상세 보강(price_sync.py): 영업시간·평점·최근 리뷰를 detail JSON에 합친다.
    *  보낸 키만 덮어쓴다(없는 키는 기존 값 보존) — 수집 실패한 항목이 지워지지 않게. */
-  async updateDetails(rows: { id: string; businessHours?: unknown; rating?: number | null; reviews?: unknown; reviewsChecked?: boolean }[]): Promise<number> {
+  async updateDetails(rows: { id: string; businessHours?: unknown; rating?: number | null; reviews?: unknown; reviewsChecked?: boolean; sourceCategory?: string; sourceCategoryCodeList?: unknown }[]): Promise<number> {
     let n = 0;
     for (const r of rows) {
       const patch: Record<string, unknown> = {};
+      if (typeof r.sourceCategory === 'string' && r.sourceCategory.trim()) {
+        patch.sourceCategory = r.sourceCategory;
+        patch.sourceCategoryCheckedAt = new Date().toISOString();
+        if (Array.isArray(r.sourceCategoryCodeList)) {
+          patch.sourceCategoryCodeList = r.sourceCategoryCodeList.filter(c => typeof c === 'string');
+        }
+      }
       // 리뷰 페이지를 이번에 확인했으면(리뷰가 없어도) 시각을 남겨 7일간 다시 안 받게 한다
       if (r.reviewsChecked) patch.reviewsSyncedAt = new Date().toISOString();
       if (Array.isArray(r.businessHours)) patch.businessHours = r.businessHours;
@@ -211,6 +219,8 @@ export class ShopSyncService {
   /** 파트너 상세 enrich upsert (Playwright가 수집한 필드) */
   async enrichShop(r: Record<string, unknown>): Promise<void> {
     if (isExcludedShop(String(r.id), typeof r.name === 'string' ? r.name : undefined)) return;
+    const detail = r.detail && typeof r.detail === 'object' ? r.detail as Record<string, unknown> : {};
+    if (isNonSalonSourceCategory(detail.sourceCategory ?? r.sourceCategory ?? r.category_detail)) return;
     const gu = (r.gu as string) ?? (Array.isArray(r.gus) ? (r.gus as string[])[0] : null);
     const category = (r.category as string) ?? (Array.isArray(r.categories) ? (r.categories as string[])[0] : null);
     const categories = Array.isArray(r.categories) ? r.categories : (category ? [category] : []);

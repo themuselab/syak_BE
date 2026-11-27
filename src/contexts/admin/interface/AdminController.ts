@@ -1307,6 +1307,8 @@ export class AdminController {
     try {
       const key = ((req.params as unknown as string[])[0] || '').replace(/^\/+/, '');
       if (!/^[\w./-]+$/.test(key) || key.includes('..')) { res.status(400).end(); return; }
+      const prefix = key.split('/').find(part => part && part !== '.');
+      if (prefix === 'catalog-portfolios') { res.status(404).end(); return; }
       res.setHeader('Cache-Control', 'no-store'); // presigned 302 만료 캐시 방지
       res.redirect(302, await s3PresignGet(key, 3600));
     } catch { res.status(404).end(); }

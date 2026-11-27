@@ -69,11 +69,12 @@ export class GeneralShopRefreshService {
     const gap = source==='place' ? 6 : 1;
     const quota = source==='place' ? 2400 : 43200;
     const day = "(now() AT TIME ZONE 'Asia/Seoul')::date";
+    const midnight = `((${day}+1)::timestamp AT TIME ZONE 'Asia/Seoul')`;
     const result = await this.db.query(`INSERT INTO catalog_source_request_budget AS old(source,day,used,granted,next_grant_at)
-      VALUES ($1,${day},$2,$2,now()+make_interval(secs=>$2::int*$3::int))
+      VALUES ($1,${day},$2,$2,least(${midnight},now()+make_interval(secs=>$2::int*$3::int)))
       ON CONFLICT(source,day) DO UPDATE SET
         granted=least($2::int,$4::int-old.used), used=least($4::int,old.used+$2::int),
-        next_grant_at=now()+make_interval(secs=>least($2::int,$4::int-old.used)*$3::int)
+        next_grant_at=least(${midnight},now()+make_interval(secs=>least($2::int,$4::int-old.used)*$3::int))
       WHERE old.used<$4::int AND old.next_grant_at<=now()
       RETURNING granted,next_grant_at AS until`,[source,n,gap,quota]);
     if (result.rowCount) return result.rows[0];

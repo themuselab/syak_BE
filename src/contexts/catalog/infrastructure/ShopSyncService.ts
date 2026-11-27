@@ -44,6 +44,7 @@ export class ShopSyncService {
           const result = await this.rds.query(`SELECT s.id,s.biz_id,s.item_id,s.biz_type,s.item_ids,s.items FROM shops s
             LEFT JOIN catalog_general_refresh g ON g.shop_id=s.id WHERE s.${PUBLIC_SHOP_SQL} AND s.biz_id IS NOT NULL
             AND s.is_partner IS NOT TRUE AND NOT EXISTS (SELECT 1 FROM shop_suppressions x WHERE x.shop_id=s.id)
+            AND g.metadata_outcome IS DISTINCT FROM 'category-review'
             AND NOT COALESCE((${GENERAL_BOOKING_OWNER}),FALSE) ORDER BY s.id`, [PRIMARY]);
           return result.rows;
         }

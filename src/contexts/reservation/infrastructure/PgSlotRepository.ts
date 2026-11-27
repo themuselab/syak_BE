@@ -121,11 +121,11 @@ export class PgSlotRepository implements ISlotRepository {
     const client = await this.rds.connect();
     try {
       await client.query('BEGIN');
-      // A partner is owned by the dedicated refresh job after its first successful sync.
+      // Partner slot ownership begins immediately when the shop joins.
       // Lock the same shop rows as that job to prevent an older nationwide run overwriting it.
       const { rows: eligible } = await client.query(
         `SELECT id FROM shops WHERE id=ANY($1::text[])
-         AND NOT (is_partner IS TRUE AND detail->'_partnerRefresh'->>'slots' IS NOT NULL)
+         AND is_partner IS NOT TRUE
          ORDER BY id FOR UPDATE`, [shopIds]);
       const allowed = new Set(eligible.map(r => String(r.id)));
       shopIds = shopIds.filter(id => allowed.has(id));
@@ -172,7 +172,8 @@ export class PgSlotRepository implements ISlotRepository {
       }
 
       // 과거 정리 (작음)
-      await client.query(`DELETE FROM slots WHERE source='scraper' AND date < $1`, [startDate]);
+      await client.query(`DELETE FROM slots s WHERE s.source='scraper' AND s.date < $1
+        AND NOT EXISTS (SELECT 1 FROM shops p WHERE p.id=s.shop_id AND p.is_partner IS TRUE)`, [startDate]);
 
       await client.query('COMMIT');
 

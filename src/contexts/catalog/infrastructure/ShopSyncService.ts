@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { GENERAL_BOOKING_OWNER, PRIMARY } from './GeneralShopRefreshService';
 import { PUBLIC_SHOP_SQL, isExcludedShop } from '../../../shared/catalog-exclusions';
 import { isNonSalonSourceCategory } from '../../../shared/catalog-source-category';
 
@@ -9,12 +10,49 @@ import { isNonSalonSourceCategory } from '../../../shared/catalog-source-categor
 export class ShopSyncService {
   constructor(private readonly rds: Pool) {}
 
+  async sourceBackoff(status?: number, retryAfterSeconds?: number): Promise<Record<string, unknown>> {
+    if (status !== undefined) {
+      await this.rds.query("SELECT public.catalog_report_source_limit('naver',$1,$2)", [status,retryAfterSeconds ?? null]);
+    }
+    const { rows } = await this.rds.query(`SELECT CASE WHEN isfinite(until_at) THEN until_at END AS "untilAt",
+      manual_hold AS "manualHold",reason FROM public.catalog_source_backoff WHERE source='naver'`);
+    if (!rows.length) throw new Error('Missing Naver source backoff state');
+    return rows[0];
+  }
+
+  async catalogAudit(batch: string, version?: string): Promise<Record<string, unknown>> {
+    // Before the first completion there is no publication table in an existing deployment.
+    const table = await this.rds.query("SELECT to_regclass('public.catalog_audit_publications') AS name");
+    if (!table.rows[0]?.name) return { state: 'pending' };
+    if (version) {
+      const snapshot = await this.rds.query(
+        'SELECT version,manifest FROM catalog_audit_publications WHERE batch_id=$1 AND version=$2', [batch,version]);
+      return snapshot.rows[0] ? {state: 'complete', ...snapshot.rows[0]} : {state: 'unknown-version'};
+    }
+    const latest = await this.rds.query(
+      'SELECT version FROM catalog_audit_publications WHERE batch_id=$1 ORDER BY published_at DESC,version DESC LIMIT 1', [batch]);
+    return latest.rows[0] ? {state: 'complete', version: latest.rows[0].version} : {state: 'pending'};
+  }
+
   /** 스크래핑 대상 (biz_id 있는 샵) */
-  async getTargets(): Promise<Record<string, unknown>[]> {
+  async getTargets(legacy = false): Promise<Record<string, unknown>[]> {
+    if (legacy) {
+      const seed = await this.rds.query("SELECT to_regclass('public.semas_candidate_sync_state') AS name");
+      if (seed.rows[0]?.name) {
+        const ready = await this.rds.query('SELECT 1 FROM semas_candidate_sync_state WHERE singleton AND candidate_count>0');
+        if (ready.rowCount) {
+          const result = await this.rds.query(`SELECT s.id,s.biz_id,s.item_id,s.biz_type,s.item_ids,s.items FROM shops s
+            LEFT JOIN catalog_general_refresh g ON g.shop_id=s.id WHERE s.${PUBLIC_SHOP_SQL} AND s.biz_id IS NOT NULL
+            AND s.is_partner IS NOT TRUE AND NOT EXISTS (SELECT 1 FROM shop_suppressions x WHERE x.shop_id=s.id)
+            AND NOT COALESCE((${GENERAL_BOOKING_OWNER}),FALSE) ORDER BY s.id`, [PRIMARY]);
+          return result.rows;
+        }
+      }
+    }
     const { rows } = await this.rds.query(
       `SELECT id, biz_id, item_id, biz_type, item_ids, items
        FROM shops WHERE ${PUBLIC_SHOP_SQL} AND biz_id IS NOT NULL
-       AND NOT (is_partner IS TRUE AND detail->'_partnerRefresh'->>'slots' IS NOT NULL) ORDER BY id`,
+       AND is_partner IS NOT TRUE ORDER BY id`,
     );
     return rows;
   }
@@ -28,7 +66,7 @@ export class ShopSyncService {
       `SELECT s.id, s.biz_id, s.item_id, s.biz_type, s.item_ids, s.items
          FROM shops s
         WHERE s.${PUBLIC_SHOP_SQL} AND s.biz_id IS NOT NULL
-          AND NOT (s.is_partner IS TRUE AND s.detail->'_partnerRefresh'->>'slots' IS NOT NULL)
+          AND s.is_partner IS NOT TRUE
           AND EXISTS (SELECT 1 FROM favorites f WHERE f.shop_id = s.id)
         ORDER BY s.id`,
     );
@@ -107,7 +145,7 @@ export class ShopSyncService {
       await this.rds.query(
         `UPDATE shops s SET slot_summary = v.ss
          FROM (VALUES ${values.join(',')}) AS v(id, ss)
-         WHERE s.id = v.id AND NOT (s.is_partner IS TRUE AND s.detail->'_partnerRefresh'->>'slots' IS NOT NULL)`,
+         WHERE s.id = v.id AND s.is_partner IS NOT TRUE`,
         params,
       );
       n += batch.length;

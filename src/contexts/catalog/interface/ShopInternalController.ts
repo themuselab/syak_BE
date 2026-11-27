@@ -1,10 +1,28 @@
 import { Request, Response, NextFunction } from 'express';
+import { GeneralShopRefreshService } from '../infrastructure/GeneralShopRefreshService';
 import { ShopSyncService } from '../infrastructure/ShopSyncService';
 import { PartnerRefreshService, RefreshKind } from '../infrastructure/PartnerRefreshService';
 
 /** 내부용(스크래퍼) — 샵 타깃/메타/요약/today_open. X-Internal-Key 필요 */
 export class ShopInternalController {
-  constructor(private readonly svc: ShopSyncService, private readonly partnerRefresh: PartnerRefreshService) {}
+  constructor(private readonly svc: ShopSyncService, private readonly partnerRefresh: PartnerRefreshService,
+    private readonly general: GeneralShopRefreshService) {}
+
+  sourceBackoff = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      let status: number | undefined;
+      let seconds: number | undefined;
+      if (req.method === 'POST') {
+        status = req.body?.status;
+        seconds = req.body?.retryAfterSeconds;
+        if (!status || ![401,403,429,503].includes(status) || (seconds != null
+          && (!Number.isInteger(seconds) || seconds < 0 || seconds > 2147483647))) {
+          res.status(400).json({code:'VALIDATION_ERROR'}); return;
+        }
+      }
+      res.set('Cache-Control', 'private, no-store').json(await this.svc.sourceBackoff(status, seconds));
+    } catch (e) { next(e); }
+  };
 
   partnerTargets = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -28,8 +46,69 @@ export class ShopInternalController {
     } catch (err) { next(err); }
   };
 
-  targets = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try { res.json({ targets: await this.svc.getTargets() }); } catch (err) { next(err); }
+  refreshDailySlots = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { id, observedAt, data } = req.body ?? {};
+      if (typeof id !== 'string' || !/^\d+$/.test(id) || typeof observedAt !== 'string'
+          || !data || typeof data.noticeChecked !== 'boolean'
+          || (data.noticeChecked ? !['notice_present', 'notice_not_seen'].includes(data.noticeStatus) : data.noticeStatus != null)) {
+        res.status(400).json({ code: 'VALIDATION_ERROR' }); return;
+      }
+      res.json(await this.partnerRefresh.applyDailySlots(id, observedAt, data));
+    } catch (err) { next(err); }
+  };
+
+  generalTargets = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const {kind} = req.query;
+      const part = Number(req.query.part), limit = Number(req.query.limit ?? 32);
+      if ((kind !== 'metadata' && kind !== 'slots') || !Number.isInteger(part) || part<0 || part>=8
+          || !Number.isInteger(limit) || limit<1 || limit>80) {
+        res.status(400).json({code:'VALIDATION_ERROR'}); return;
+      }
+      res.set('Cache-Control','private, no-store').json(await this.general.targets(kind,part,limit));
+    } catch (error) { next(error); }
+  };
+
+  generalRecord = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const {id,kind,observedAt,outcome,data} = req.body ?? {};
+      const states = kind==='metadata' ? ['observed','unavailable','category-review'] :
+        ['updated','not-eligible','no-calendar','no-booking-item','notice-empty','unavailable'];
+      if (!['slots','metadata'].includes(kind) || typeof id!=='string' || !/^\d+$/.test(id)
+          || !states.includes(outcome) || typeof observedAt!=='string' || !Number.isFinite(Date.parse(observedAt))
+          || Date.parse(observedAt)>Date.now()+60000 || Date.parse(observedAt)<Date.now()-3600000
+          || (outcome==='observed' && (!data || data.placeId!==id))) {
+        res.status(400).json({code:'VALIDATION_ERROR'}); return;
+      }
+      res.json(await this.general.record(id,kind,observedAt,outcome,data ?? {}));
+    } catch (error) { next(error); }
+  };
+
+  generalReserve = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const {source,count} = req.body ?? {};
+      if (!['place','booking'].includes(source) || !Number.isInteger(count) || count<1 || count>8) {
+        res.status(400).json({code:'VALIDATION_ERROR'}); return;
+      }
+      res.json(await this.general.reserve(source,count));
+    } catch (error) { next(error); }
+  };
+
+  catalogAudit = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const {batch, version} = req.query;
+      if (typeof batch !== 'string' || !/^[a-z0-9-]{1,45}$/.test(batch)
+          || (version !== undefined && (typeof version !== 'string' || !/^[0-9a-f]{64}$/.test(version)))) {
+        res.status(400).json({code: 'VALIDATION_ERROR'});
+        return;
+      }
+      res.set('Cache-Control','private, no-store').json(await this.svc.catalogAudit(batch,version));
+    } catch (err) { next(err); }
+  };
+
+  targets = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try { res.json({ targets: await this.svc.getTargets(req.query.legacy === '1') }); } catch (err) { next(err); }
   };
 
   /** 즐겨찾기된 샵만 (빈자리 알림 고빈도 폴링용) */

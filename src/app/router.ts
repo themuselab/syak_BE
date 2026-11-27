@@ -42,8 +42,19 @@ export function buildRouter(controllers: Controllers): Router {
   router.get('/internal/inquiries', requireInternalKey, controllers.admin.listInquiries); // 사장님 도입 문의(관리자 페이지 없이 조회, ?status=pending)
   router.post('/internal/slots/sync', requireInternalKey, controllers.slotSync.handle); // 스크래퍼 → RDS 슬롯 동기화
   router.get('/internal/slots/open-now', requireInternalKey, controllers.slotSync.openNowHandler); // 초록핀 재계산용
+  router.get('/internal/shops/source-backoff', requireInternalKey, controllers.shopInternal.sourceBackoff);
+  router.post('/internal/shops/source-backoff', requireInternalKey, controllers.shopInternal.sourceBackoff);
+  router.get('/internal/shops/public-metadata', requireInternalKey, controllers.shopInternal.generalTargets);
+  router.post('/internal/shops/public-metadata', requireInternalKey, controllers.shopInternal.generalRecord);
+  router.post('/internal/shops/request-budget', requireInternalKey, controllers.shopInternal.generalReserve);
+  router.get('/internal/shops/catalog-audit', requireInternalKey, controllers.shopInternal.catalogAudit);
+  router.get('/internal/shops/business-photos', requireInternalKey, controllers.businessPhotos.targets);
+  router.post('/internal/shops/business-photos', requireInternalKey, controllers.businessPhotos.record);
+  router.get('/internal/shops/semas-candidates', requireInternalKey, controllers.semasCandidates.targets);
+  router.post('/internal/shops/semas-candidates', requireInternalKey, controllers.semasCandidates.record);
   router.get('/internal/shops/targets',  requireInternalKey, controllers.shopInternal.targets);   // 스크래퍼 타깃
   router.get('/internal/shops/partner-targets', requireInternalKey, controllers.shopInternal.partnerTargets);
+  router.post('/internal/shops/daily-slots', requireInternalKey, controllers.shopInternal.refreshDailySlots);
   router.post('/internal/shops/partner-refresh', requireInternalKey, controllers.shopInternal.refreshPartner);
   router.get('/internal/shops/favorite-targets', requireInternalKey, controllers.shopInternal.favoriteTargets); // 빈자리 알림 고빈도 타깃(즐겨찾기)
   router.get('/internal/shops/meta',     requireInternalKey, controllers.shopInternal.meta);      // 알림용 샵 메타

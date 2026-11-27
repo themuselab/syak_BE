@@ -143,13 +143,13 @@ export class ShopSyncService {
         params.push(r.id, JSON.stringify(r.slot_summary ?? []));
       });
       // id → slot_summary 매핑 UPDATE (존재하는 샵만)
-      await this.rds.query(
+      const result = await this.rds.query(
         `UPDATE shops s SET slot_summary = v.ss
          FROM (VALUES ${values.join(',')}) AS v(id, ss)
          WHERE s.id = v.id AND s.is_partner IS NOT TRUE`,
         params,
       );
-      n += batch.length;
+      n += result.rowCount ?? 0;
     }
     return n;
   }

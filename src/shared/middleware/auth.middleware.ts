@@ -30,7 +30,8 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction): v
 
 export function requireInternalKey(req: Request, _res: Response, next: NextFunction): void {
   const key = req.headers['x-internal-key'];
-  if (key !== process.env.INTERNAL_API_KEY) {
+  const configured = process.env.INTERNAL_API_KEY;
+  if (!configured || typeof key !== 'string' || key !== configured) {
     return next(Errors.internalKeyInvalid());
   }
   next();

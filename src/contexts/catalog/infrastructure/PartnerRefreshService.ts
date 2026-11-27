@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { PUBLIC_SHOP_SQL } from '../../../shared/catalog-exclusions';
 import { ICacheService } from '../../../shared/cache/ICacheService';
 
 export type RefreshKind = 'slots' | 'events' | 'details';
@@ -24,6 +25,18 @@ export class PartnerRefreshService {
   }
 
   async apply(id: string, kind: RefreshKind, observedAt: string, data: Record<string, any>): Promise<{ applied: boolean; newSlots: unknown[] }> {
+    return this.applySnapshot(id, kind, observedAt, data, false);
+  }
+
+  async applyDailySlots(id: string, observedAt: string, data: Record<string, any>) {
+    // A source caution plus an empty calendar cannot establish that a shop is full.
+    if (data.noticeStatus === 'notice_present' && Array.isArray(data.slots) && data.slots.length === 0) {
+      return { applied: false, newSlots: [] };
+    }
+    return this.applySnapshot(id, 'slots', observedAt, data, true);
+  }
+
+  private async applySnapshot(id: string, kind: RefreshKind, observedAt: string, data: Record<string, any>, daily: boolean): Promise<{ applied: boolean; newSlots: unknown[] }> {
     const observed = Date.parse(observedAt);
     if (!Number.isFinite(observed) || observed > Date.now() + 60_000 || observed < Date.now() - 3_600_000) throw new Error('Invalid observation time');
     const client = await this.pool.connect();
@@ -32,9 +45,15 @@ export class PartnerRefreshService {
     try {
       await client.query('BEGIN');
       // Membership and source watermark are checked under the same row lock as replacement.
-      const { rows } = await client.query('SELECT detail FROM shops WHERE id=$1 AND is_partner=true FOR UPDATE', [id]);
+      const eligible = daily
+        ? `${PUBLIC_SHOP_SQL} AND is_partner IS NOT TRUE`
+        : 'is_partner=true';
+      const { rows } = await client.query(`SELECT detail FROM shops WHERE id=$1 AND ${eligible} FOR UPDATE`, [id]);
       const old = rows[0]?.detail ?? {};
-      if (!rows.length || Date.parse(old._partnerRefresh?.[kind] ?? '') >= observed) {
+      const lastObserved = daily ? old._dailySlotRefresh?.observedAt : old._partnerRefresh?.[kind];
+      const otherSlotObservation = daily ? old._partnerRefresh?.slots : old._dailySlotRefresh?.observedAt;
+      if (!rows.length || Date.parse(lastObserved ?? '') >= observed
+          || (kind === 'slots' && Date.parse(otherSlotObservation ?? '') >= observed)) {
         await client.query('ROLLBACK'); return { applied: false, newSlots: [] };
       }
       let patch: Record<string, unknown> = {};
@@ -67,7 +86,7 @@ export class PartnerRefreshService {
             FROM jsonb_to_recordset($2::jsonb) AS r(date text,"startTime" text)`, [id, JSON.stringify(added.slice(i, i + 500))]);
         }
         for (const slot of clean) {
-          if (old._partnerRefresh?.slots && dates.has(slot.date) && !keys.has(`${slot.date}|${slot.startTime}`)) newSlots.push({ shopId: id, ...slot });
+          if (lastObserved && dates.has(slot.date) && !keys.has(`${slot.date}|${slot.startTime}`)) newSlots.push({ shopId: id, ...slot });
         }
         await client.query(`UPDATE shops SET slot_summary=$2::jsonb, today_open=EXISTS(
           SELECT 1 FROM slots WHERE shop_id=$1 AND date=(now() AT TIME ZONE 'Asia/Seoul')::date
@@ -100,15 +119,24 @@ export class PartnerRefreshService {
           Array.isArray(data.item_ids) && data.item_ids.length ? JSON.stringify([...new Set(data.item_ids)].slice(0, 200)) : null,
           Array.isArray(data.items) && data.items.length ? JSON.stringify(data.items.slice(0, 200)) : null]);
       }
-      patch._partnerRefresh = { ...(old._partnerRefresh ?? {}), [kind]: new Date(observed).toISOString() };
+      if (daily) {
+        patch._dailySlotRefresh = { observedAt: new Date(observed).toISOString(), startDate: data.startDate,
+          endDate: data.endDate, noticeChecked: data.noticeChecked === true, noticeStatus: data.noticeStatus ?? null };
+      } else {
+        patch._partnerRefresh = { ...(old._partnerRefresh ?? {}), [kind]: new Date(observed).toISOString() };
+      }
       await client.query(`UPDATE shops SET detail=COALESCE(detail,'{}'::jsonb)||$2::jsonb, updated_at=now() WHERE id=$1`, [id, JSON.stringify(patch)]);
       await client.query('COMMIT'); applied = true;
     } catch (err) { await client.query('ROLLBACK'); throw err; }
     finally { client.release(); }
     if (applied) {
       await this.cache.del(`shops:detail:${id}`);
-      await this.cache.delPrefix?.('shops:list:');
-      await this.cache.delPrefix?.('slots:');
+      // Daily nationwide writes rely on the short list/search TTLs to avoid flushing
+      // the entire discovery cache on every shop. Partner refresh stays immediate.
+      if (!daily) {
+        await this.cache.delPrefix?.('shops:list:');
+        await this.cache.delPrefix?.('slots:');
+      }
     }
     return { applied, newSlots };
   }

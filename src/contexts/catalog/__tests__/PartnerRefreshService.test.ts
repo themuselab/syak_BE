@@ -14,6 +14,29 @@ describe('Partner refresh snapshot safety', () => {
     const cache = { get: jest.fn(), set: jest.fn(), del: jest.fn(), delPrefix: jest.fn() };
     return { svc: new PartnerRefreshService(pool as unknown as Pool, cache), query, release, cache, pool };
   }
+  test('daily refresh uses a separate watermark and never takes ownership from partner refresh', async () => {
+    const { svc, query } = setup({ _partnerRefresh: { events: now() } });
+    const observed = now();
+    await svc.applyDailySlots('1', observed, {
+      startDate: '2026-11-08', endDate: '2026-11-10', summary: [], slots: [{ date: '2026-11-08', startTime: '10:00' }], noticeChecked: true, noticeStatus: 'notice_present',
+    });
+    const lock = query.mock.calls.find(([sql]) => sql.startsWith('SELECT detail'))!;
+    expect(lock[0]).toContain("is_partner IS NOT TRUE");
+    const write = query.mock.calls.find(([sql]) => sql.includes('detail=COALESCE'))!;
+    expect(JSON.parse(write[1]![1] as string)).toEqual({ _dailySlotRefresh: {
+      observedAt: observed, startDate: '2026-11-08', endDate: '2026-11-10', noticeChecked: true, noticeStatus: 'notice_present',
+    } });
+    const stale = setup({ _dailySlotRefresh: { observedAt: observed } });
+    expect((await stale.svc.applyDailySlots('1', observed, {})).applied).toBe(false);
+    expect(stale.query.mock.calls.some(([sql]) => /^(DELETE|UPDATE)/.test(sql))).toBe(false);
+  });
+
+  test('empty calendar with a current information notice never deletes known slots', async () => {
+    const { svc, pool } = setup();
+    expect(await svc.applyDailySlots('1', now(), { slots: [], noticeStatus: 'notice_present' })).toEqual({applied: false, newSlots: []});
+    expect(pool.connect).not.toHaveBeenCalled();
+  });
+
   test('removed partner cannot be updated or re-enabled', async () => {
     const { svc, query } = setup({}, false);
     expect(await svc.apply('1', 'events', now(), { event_desc: null })).toEqual({ applied: false, newSlots: [] });

@@ -46,6 +46,18 @@ describe('requireAuth', () => {
 });
 
 describe('requireInternalKey', () => {
+  it('서버 키가 설정되지 않으면 내부 조회를 차단한다', () => {
+    const configured = process.env.INTERNAL_API_KEY;
+    delete process.env.INTERNAL_API_KEY;
+    try {
+      const next = makeNext();
+      requireInternalKey(makeReq(), makeRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: ErrorCode.INTERNAL_KEY_INVALID }));
+    } finally {
+      if (configured) process.env.INTERNAL_API_KEY = configured;
+    }
+  });
+
   it('올바른 internal key이면 next()를 호출한다', () => {
     const next = makeNext();
     requireInternalKey(makeReq({ headers: { 'x-internal-key': 'test-internal-key' } }), makeRes(), next);

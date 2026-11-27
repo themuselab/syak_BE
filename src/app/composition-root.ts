@@ -63,6 +63,9 @@ import { GetShopsUseCase } from '../contexts/catalog/application/GetShopsUseCase
 import { GetShopDetailUseCase } from '../contexts/catalog/application/GetShopDetailUseCase';
 import { CatalogController } from '../contexts/catalog/interface/CatalogController';
 import { WebCatalogController } from '../contexts/catalog/interface/WebCatalogController';
+import { BusinessPhotoController } from '../contexts/catalog/interface/BusinessPhotoController';
+import { SemasCandidateController } from '../contexts/catalog/interface/SemasCandidateController';
+import { GeneralShopRefreshService } from '../contexts/catalog/infrastructure/GeneralShopRefreshService';
 import { ShopSyncService } from '../contexts/catalog/infrastructure/ShopSyncService';
 import { PartnerRefreshService } from '../contexts/catalog/infrastructure/PartnerRefreshService';
 import { ShopInternalController } from '../contexts/catalog/interface/ShopInternalController';
@@ -114,6 +117,8 @@ export interface Controllers {
   slotSync: SlotSyncController;
   webCatalog: WebCatalogController;
   shopInternal: ShopInternalController;
+  businessPhotos: BusinessPhotoController;
+  semasCandidates: SemasCandidateController;
   favorite: FavoriteController;
   notification: NotificationController;
   slotAlert: SlotAlertController;
@@ -172,7 +177,7 @@ export function buildDependencies(): AppDependencies {
   // ── Catalog (Supabase REST API — 읽기 전용, Redis 캐시) ──────
   const shopRepo = new PgShopRepository(rds, cache);
   const webCatalogController = new WebCatalogController(rds);
-  const shopInternalController = new ShopInternalController(new ShopSyncService(rds), new PartnerRefreshService(rds, cache));
+  const shopInternalController = new ShopInternalController(new ShopSyncService(rds), new PartnerRefreshService(rds, cache), new GeneralShopRefreshService(rds));
   const catalogController = new CatalogController(
     new GetShopsUseCase(shopRepo),
     new GetShopDetailUseCase(shopRepo),
@@ -283,6 +288,8 @@ export function buildDependencies(): AppDependencies {
     slotSync: slotSyncController,
     webCatalog: webCatalogController,
     shopInternal: shopInternalController,
+    businessPhotos: new BusinessPhotoController(rds),
+    semasCandidates: new SemasCandidateController(rds),
     favorite: favoriteController,
     notification: notificationController,
     slotAlert: slotAlertController,

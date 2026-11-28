@@ -104,6 +104,19 @@ export class SemasCandidateController {
 
   targets = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
+      if (req.query.kind === 'coverage') {
+        const {rows:[coverage]} = await this.db.query(`SELECT registry.candidate_count AS "registeredAddresses",
+          registry.source_date::text AS "addressSourceDate", linked.* FROM semas_candidate_sync_state registry
+          CROSS JOIN LATERAL (SELECT count(*)::int AS "linkedPlaces",
+            count(*) FILTER (WHERE jsonb_array_length(obs->'reviews')>0)::int AS "withReviewSamples",
+            count(*) FILTER (WHERE jsonb_array_length(obs->'photos')>0)::int AS "withBusinessPhotoUrls",
+            max(verified_at) AS "lastPlaceMatchAt"
+            FROM (SELECT verified_at,coalesce(evidence->'lastObservation',evidence->'snapshot') AS obs
+              FROM semas_shop_candidates WHERE active AND verified_place_id IS NOT NULL) observations) linked
+          WHERE registry.singleton`);
+        res.set('Cache-Control','private, no-store').json({coverage:coverage ?? null});
+        return;
+      }
       const s = String(req.query.shard ?? ''), after = String(req.query.after ?? '');
       const n = Number(req.query.limit ?? 50);
       const linked = req.query.kind === 'linked';

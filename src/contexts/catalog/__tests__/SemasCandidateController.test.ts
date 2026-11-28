@@ -32,3 +32,38 @@ test('late or repeated observation and inactive identities do not replace a veri
     expect(res.json).toHaveBeenCalledWith({applied:false});
   }
 });
+
+test('saves the matched snapshot and queues only business image URLs in the same transaction', async () => {
+  const query=jest.fn(async (sql:string,_params?:unknown[]) =>
+    ({rows:sql.startsWith('SELECT name') ? [candidate] : [],rowCount:1}));
+  const db={connect:async()=>({query,release:jest.fn()})}, res=response(), next=jest.fn();
+  const photo='https://ldb-phinf.pstatic.net/business.jpg';
+  const snapshot={visitorReviewCount:0,photos:[photo,photo,'https://elsewhere.test/file.jpg'],
+    reviews:[{body:'커트가 좋아요',visited:'11.25',user:'private'}],instagram:'https://instagram.com/salon/?utm=1'};
+  await new SemasCandidateController(db as unknown as Pool).record(
+    {body:{...body,place:{...place,snapshot}}} as Request,res,next);
+  expect(next).not.toHaveBeenCalled();
+  const update=query.mock.calls.find(([sql])=>sql.startsWith('UPDATE'))!;
+  expect(JSON.parse(String(update[1]?.[5])).snapshot).toEqual({visitorReviewCount:0,photos:[photo],
+    reviews:[{body:'커트가 좋아요',visited:'11.25'}],instagram:'https://www.instagram.com/salon/'});
+  const intake=query.mock.calls.find(([sql])=>sql.startsWith('INSERT INTO catalog_business_photo_intake'))!;
+  expect(intake[1]?.slice(0,2)).toEqual([place.id,[photo]]);
+  expect(query.mock.calls.at(-1)?.[0]).toBe('COMMIT');
+  expect(res.json).toHaveBeenCalledWith({applied:true,snapshotSaved:true});
+});
+
+test('a due unresolved or changed linked shop keeps its previous Place proof, while the check is recorded', async () => {
+  const query=jest.fn(async (sql:string,_params?:unknown[])=>({
+    rows:sql.startsWith('SELECT name') ? [{...candidate,verified_place_id:place.id}] : [],rowCount:1}));
+  const db={connect:async()=>({query,release:jest.fn()})}, res=response();
+  for (const refreshPlaceId of [place.id,'789000']) {
+    query.mockClear();
+    await new SemasCandidateController(db as unknown as Pool).record({body:{...body,place:undefined,
+      outcome:'no_match',refreshPlaceId}} as Request,res,jest.fn());
+    const update=query.mock.calls.find(([sql])=>sql.startsWith('UPDATE'));
+    if (refreshPlaceId===place.id) {
+      expect(update?.[0]).toContain('evidence=evidence ||');
+      expect(JSON.parse(String(update?.[1]?.[3]))).toEqual({lastRefreshOutcome:'no_match'});
+    } else expect(update).toBeUndefined();
+  }
+});

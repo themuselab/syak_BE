@@ -5,8 +5,11 @@ import { Pool } from 'pg';
 import { Errors } from '../../../shared/errors/AppError';
 
 const MAX_BYTES = 8 * 1024 * 1024;
-const eligible = `(s.category IN ('네일','헤어','메이크업') OR s.categories ?| ARRAY['네일','헤어','메이크업'])
-  AND NOT EXISTS(SELECT 1 FROM shop_suppressions x WHERE x.shop_id=s.id)`;
+const eligible = `NOT EXISTS (SELECT 1 FROM shop_suppressions x WHERE x.shop_id=p.shop_id)
+  AND (EXISTS (SELECT 1 FROM shops s WHERE s.id=p.shop_id AND
+    (s.category IN ('네일','헤어','메이크업') OR s.categories ?| ARRAY['네일','헤어','메이크업']))
+    OR (NOT EXISTS (SELECT 1 FROM shops s WHERE s.id=p.shop_id)
+      AND EXISTS (SELECT 1 FROM semas_shop_candidates c WHERE c.active AND c.verified_place_id=p.shop_id)))`;
 const due = "p.s3_key IS NULL AND coalesce(p.retry_after,'-infinity')<=now()";
 const sourcePattern = /^https:\/\/(?:ldb-phinf|naverbooking-phinf)\.pstatic\.net\/[^\s\\#]+$/;
 
@@ -41,7 +44,7 @@ export class BusinessPhotoController {
       const limit = Number(req.query.limit ?? 16);
       if (!Number.isInteger(limit) || limit < 1 || limit > 30) throw Errors.validation();
       const result = await this.db.query(`SELECT p.shop_id AS "shopId",p.source_url AS "sourceUrl",p.attempts
-        FROM catalog_business_photo_intake p JOIN shops s ON s.id=p.shop_id WHERE ${due} AND ${eligible}
+        FROM catalog_business_photo_intake p WHERE ${due} AND ${eligible}
         ORDER BY p.attempts,p.observed_at,p.shop_id,p.source_url LIMIT $1`,[limit]);
       res.set('Cache-Control','private, no-store').json({targets:result.rows});
     } catch (err) { next(err); }
@@ -55,7 +58,7 @@ export class BusinessPhotoController {
           !['archive','unavailable','unsupported'].includes(outcome)) throw Errors.validation();
       const params = [shopId,sourceUrl,attempts];
       const match = `p.shop_id=$1 AND p.source_url=$2 AND p.attempts=$3 AND ${due}
-        AND EXISTS (SELECT 1 FROM shops s WHERE s.id=p.shop_id AND ${eligible})`;
+        AND ${eligible}`;
       if (outcome !== 'archive') {
         const result = await this.db.query(`UPDATE catalog_business_photo_intake p SET attempts=attempts+1,
           retry_after=CASE WHEN $4 THEN 'infinity'::timestamptz ELSE now()+make_interval(mins=>least(1440,15*(2^least(attempts,7))::int)) END

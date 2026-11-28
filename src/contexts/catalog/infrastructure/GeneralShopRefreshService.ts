@@ -41,13 +41,14 @@ export class GeneralShopRefreshService {
     if (!ready.rowCount) return {ready:false,targets:[]};
     const slots = kind === 'slots';
     const last = slots ? 'g.slot_attempt_at' : 'g.metadata_attempt_at';
-    const due = slots ? "interval '15 minutes'" : "interval '7 days'";
+    const wanted = '(s.today_open IS TRUE OR EXISTS(SELECT 1 FROM favorites f WHERE f.shop_id=s.id))';
+    const due = slots ? "interval '15 minutes'" : `CASE WHEN ${wanted} THEN interval '6 hours' ELSE interval '7 days' END`;
     const params = [PRIMARY,part,limit];
     const result = await this.db.query(`
       WITH due AS (
         SELECT s.id,s.category,s.categories,s.biz_id,s.item_id,s.biz_type,s.item_ids,s.items,
           ${last} AS attempted,g.availability_notice,s.detail->'_dailySlotRefresh'->>'noticeStatus' AS notice_status,
-          (s.today_open IS TRUE OR EXISTS(SELECT 1 FROM favorites f WHERE f.shop_id=s.id)) AS wanted
+          ${wanted} AS wanted
         FROM shops s LEFT JOIN catalog_general_refresh g ON g.shop_id=s.id
         WHERE ${ELIGIBLE} AND ((hashtext(s.id)::bigint & 2147483647) % 8)=$2
           AND (${last} IS NULL OR ${last}<now()-${due})
